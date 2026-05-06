@@ -1,0 +1,115 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // -----------------------------------------------------------------
+    // PILLAR 0: Global Safety Net (Default Deny)
+    // -----------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -----------------------------------------------------------------
+    // PILLAR 3: Global Helpers
+    // -----------------------------------------------------------------
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    
+    // Robust Admin Check (Identity Integrity)
+    function isAdmin() {
+      return isSignedIn() && (
+        // Known admin UIDs
+        request.auth.uid == "FXwiaCqvnVNPpfZ91VCZ0GxN0tE2" || 
+        // Trusted email check (Email Spoofing Guard)
+        (request.auth.token.email == "rickylemar0@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    // ID Poisoning Guard
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+
+    // -----------------------------------------------------------------
+    // PILLAR 6: PII Isolation & User Profiles
+    // -----------------------------------------------------------------
+    match /users/{userId} {
+      // Split read: isOwner can read everything, users/public doesn't exist yet but let's be safe
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Validation Blueprint (The "Anti-Update-Gap")
+      function isValidUser(data) {
+        return data.keys().hasAll(['uid', 'email']) &&
+               data.uid == userId &&
+               data.email is string && data.email.size() < 256 &&
+               (!('role' in data) || (data.role == 'user' || data.role == 'admin')) &&
+               (!('subscription' in data) || (
+                 data.subscription is map &&
+                 data.subscription.keys().hasOnly(['plan', 'status', 'expiryDate']) &&
+                 data.subscription.plan in ['free', 'lite', 'standard', 'family', 'quarterly', 'annual']
+               ));
+      }
+
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      
+      // Tiered Identity Logic: Users can't promote themselves to admin
+      allow update: if isOwner(userId) && isValidUser(incoming()) && (
+        incoming().role == existing().role || isAdmin()
+      );
+      
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // -----------------------------------------------------------------
+    // PILLAR 1: Relational Sync (Playlists)
+    // -----------------------------------------------------------------
+    match /playlists/{playlistId} {
+      // PILLAR 8: Secure List Queries (The "Query Enforcer")
+      // Explicitly evaluates resource.data to prevent blanket list queries
+      allow read: if (existing().isPublic == true) || isOwner(existing().ownerId) || isAdmin();
+      
+      function isValidPlaylist(data) {
+        return data.keys().hasAll(['name', 'ownerId']) &&
+               data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+               (data.ownerId == request.auth.uid || isAdmin()) &&
+               (!('songIds' in data) || (data.songIds is list && data.songIds.size() <= 500)) &&
+               (!('isPublic' in data) || data.isPublic is bool);
+      }
+
+      allow create: if isSignedIn() && isValidId(playlistId) && isValidPlaylist(incoming());
+      
+      // Action-Based Update Pattern
+      allow update: if (isOwner(existing().ownerId) || isAdmin()) && (
+        // Action: Update metadata
+        (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'isPublic', 'songIds']) && isValidPlaylist(incoming()))
+      );
+      
+      allow delete: if isOwner(existing().ownerId) || isAdmin();
+    }
+
+    // -----------------------------------------------------------------
+    // PILLAR 5: Total Array Guarding (Notifications)
+    // -----------------------------------------------------------------
+    match /notifications/{notificationId} {
+      allow read: if isOwner(existing().userId);
+      allow create: if isOwner(incoming().userId) && incoming().keys().hasAll(['title', 'userId', 'isRead']);
+      allow update: if isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+      allow delete: if isOwner(existing().userId);
+    }
+
+    // -----------------------------------------------------------------
+    // LEGACY: Songs, Artists, Albums (Now Managed in MongoDB/Express)
+    // -----------------------------------------------------------------
+    // We allow read temporarily while pages migrate, but restrict writes
+    match /songs/{songId} { allow read: if true; allow write: if isAdmin(); }
+    match /artists/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /albums/{id} { allow read: if true; allow write: if isAdmin(); }
+
+    // Internal health check
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

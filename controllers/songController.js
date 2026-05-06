@@ -1,0 +1,557 @@
+import mysqlPool from '../config/mysql.js';
+import fs from 'fs';
+import path from 'path';
+import createEncryptedHls from '../utils/createEncryptedHls.js';
+
+// @desc    Upload song and cover image locally, encrypt audio into HLS, then save metadata to MySQL
+// @route   POST /api/songs/upload-song
+// @access  Private/Admin
+const uploadSong = async (req, res) => {
+  console.log('--- [ENCRYPTED SONG UPLOAD CONTROLLER] ---');
+  console.log('[DEBUG] Files:', Object.keys(req.files || {}).join(', '));
+  console.log('[DEBUG] Body Metadata:', JSON.stringify(req.body));
+
+  const { title, artist, album, genre, duration } = req.body;
+
+  const audioFile = req.files?.audio?.[0];
+  const coverFile = req.files?.coverImage?.[0];
+
+  if (!audioFile) {
+    return res.status(400).json({
+      message: 'Audio file is required',
+    });
+  }
+
+  if (!title || title.trim() === '') {
+    return res.status(400).json({
+      message: 'Song title is required',
+    });
+  }
+
+  if (!artist || artist.trim() === '') {
+    return res.status(400).json({
+      message: 'Artist name is required',
+    });
+  }
+
+  const inputFilePath = audioFile.path;
+
+  const coverUrl = coverFile
+    ? `/uploads/covers/${coverFile.filename}`
+    : 'https://picsum.photos/seed/music/400/400';
+
+  console.log('[LOCAL FILE] Raw audio saved temporarily at:', inputFilePath);
+  console.log('[LOCAL FILE] Cover saved at:', coverUrl);
+
+  let hlsResult;
+
+  try {
+    console.log('[ENCRYPTION] Starting encrypted HLS generation...');
+
+    hlsResult = await createEncryptedHls(inputFilePath);
+
+    console.log('[ENCRYPTION] HLS encryption completed:', hlsResult.hlsPath);
+
+    try {
+      if (fs.existsSync(inputFilePath)) {
+        fs.unlinkSync(inputFilePath);
+        console.log('[CLEANUP] Original raw audio deleted:', inputFilePath);
+      }
+    } catch (cleanupError) {
+      console.warn('[CLEANUP WARNING] Could not delete raw audio:', cleanupError.message);
+    }
+  } catch (encryptionError) {
+    console.error('[ENCRYPTION ERROR]', encryptionError);
+
+    return res.status(500).json({
+      message: `Failed to encrypt song: ${encryptionError.message}`,
+      error: encryptionError.message,
+    });
+  }
+
+  const connection = await mysqlPool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    // 1. Find or create artist
+    let artistId;
+
+    const [existingArtists] = await connection.query(
+      'SELECT id FROM artists WHERE LOWER(name) = LOWER(?) LIMIT 1',
+      [artist.trim()]
+    );
+
+    if (existingArtists.length > 0) {
+      artistId = existingArtists[0].id;
+
+      if (coverUrl) {
+        await connection.query(
+          `
+          UPDATE artists 
+          SET profile_image = COALESCE(profile_image, ?)
+          WHERE id = ?
+          `,
+          [coverUrl, artistId]
+        );
+      }
+    } else {
+      const [artistResult] = await connection.query(
+        `
+        INSERT INTO artists (name, profile_image, bio)
+        VALUES (?, ?, ?)
+        `,
+        [artist.trim(), coverUrl, null]
+      );
+
+      artistId = artistResult.insertId;
+    }
+
+    // 2. Find or create album if provided
+    let albumId = null;
+
+    if (album && album.trim() !== '') {
+      const [existingAlbums] = await connection.query(
+        `
+        SELECT id 
+        FROM albums 
+        WHERE LOWER(title) = LOWER(?) AND artist_id = ?
+        LIMIT 1
+        `,
+        [album.trim(), artistId]
+      );
+
+      if (existingAlbums.length > 0) {
+        albumId = existingAlbums[0].id;
+      } else {
+        const [albumResult] = await connection.query(
+          `
+          INSERT INTO albums (artist_id, title, release_date)
+          VALUES (?, ?, ?)
+          `,
+          [artistId, album.trim(), null]
+        );
+
+        albumId = albumResult.insertId;
+      }
+    }
+
+    // 3. Temporarily insert with placeholder stream URL
+    const [songResult] = await connection.query(
+      `
+      INSERT INTO songs 
+      (title, artist_id, album_id, genre, file_url, duration, hls_path, encryption_key, key_iv)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        title.trim(),
+        artistId,
+        albumId,
+        genre || 'Unknown',
+        '',
+        duration ? Math.round(Number(duration)) : 0,
+        hlsResult.hlsPath,
+        hlsResult.encryptionKey,
+        hlsResult.iv,
+      ]
+    );
+
+    const streamUrl = `/api/songs/stream/${songResult.insertId}/master.m3u8`;
+
+    await connection.query(
+      `
+      UPDATE songs
+      SET file_url = ?
+      WHERE id = ?
+      `,
+      [streamUrl, songResult.insertId]
+    );
+
+    await connection.commit();
+
+    res.status(201).json({
+      id: songResult.insertId,
+      title: title.trim(),
+      artist: artist.trim(),
+      album: album || '',
+      genre: genre || 'Unknown',
+      url: streamUrl,
+      file_url: streamUrl,
+      hls_path: hlsResult.hlsPath,
+      coverImage: coverUrl,
+      cover_image: coverUrl,
+      duration: duration ? Math.round(Number(duration)) : 0,
+      message: 'Song uploaded, encrypted, and saved successfully',
+    });
+  } catch (error) {
+    await connection.rollback();
+
+    console.error('--- [ENCRYPTED SONG UPLOAD ERROR] ---');
+    console.error('Message:', error.message);
+    console.error('Stack:', error.stack);
+
+    res.status(500).json({
+      message: `Failed to upload encrypted song: ${error.message}`,
+      error: error.message,
+    });
+  } finally {
+    connection.release();
+  }
+};
+
+// @desc    Get all songs
+// @route   GET /api/songs
+// @access  Public
+const getSongs = async (req, res) => {
+  const { artist, album, genre, ids } = req.query;
+
+  let sql = `
+    SELECT 
+      songs.id,
+      songs.title,
+      songs.genre,
+      songs.file_url,
+      songs.file_url AS url,
+      songs.duration,
+      songs.created_at,
+      songs.artist_id,
+      songs.album_id,
+      songs.hls_path,
+      artists.name AS artist,
+      artists.profile_image AS coverImage,
+      artists.profile_image AS cover_image,
+      albums.title AS album
+    FROM songs
+    LEFT JOIN artists ON songs.artist_id = artists.id
+    LEFT JOIN albums ON songs.album_id = albums.id
+    WHERE 1 = 1
+  `;
+
+  const params = [];
+
+  if (artist) {
+    sql += ' AND artists.name = ?';
+    params.push(artist);
+  }
+
+  if (album) {
+    sql += ' AND albums.title = ?';
+    params.push(album);
+  }
+
+  if (genre) {
+    sql += ' AND songs.genre = ?';
+    params.push(genre);
+  }
+
+  if (ids) {
+    const idArray = ids
+      .split(',')
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id));
+
+    if (idArray.length > 0) {
+      sql += ` AND songs.id IN (${idArray.map(() => '?').join(',')})`;
+      params.push(...idArray);
+    }
+  }
+
+  sql += ' ORDER BY songs.created_at DESC';
+
+  const [songs] = await mysqlPool.query(sql, params);
+
+  res.json(songs);
+};
+
+// @desc    Get song by ID
+// @route   GET /api/songs/:id
+// @access  Public
+const getSongById = async (req, res) => {
+  const [songs] = await mysqlPool.query(
+    `
+    SELECT 
+      songs.id,
+      songs.title,
+      songs.genre,
+      songs.file_url,
+      songs.file_url AS url,
+      songs.duration,
+      songs.created_at,
+      songs.artist_id,
+      songs.album_id,
+      songs.hls_path,
+      artists.name AS artist,
+      artists.profile_image AS coverImage,
+      artists.profile_image AS cover_image,
+      albums.title AS album
+    FROM songs
+    LEFT JOIN artists ON songs.artist_id = artists.id
+    LEFT JOIN albums ON songs.album_id = albums.id
+    WHERE songs.id = ?
+    `,
+    [req.params.id]
+  );
+
+  if (songs.length === 0) {
+    return res.status(404).json({
+      message: 'Song not found',
+    });
+  }
+
+  res.json(songs[0]);
+};
+
+// @desc    Create a song manually
+// @route   POST /api/songs
+// @access  Private/Admin
+const createSong = async (req, res) => {
+  const { title, artist_id, album_id, genre, file_url, duration } = req.body;
+
+  if (!title || !artist_id || !file_url) {
+    return res.status(400).json({
+      message: 'Title, artist_id, and file_url are required',
+    });
+  }
+
+  const [result] = await mysqlPool.query(
+    `
+    INSERT INTO songs 
+    (title, artist_id, album_id, genre, file_url, duration)
+    VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    [
+      title,
+      artist_id,
+      album_id || null,
+      genre || 'Unknown',
+      file_url,
+      duration ? Math.round(Number(duration)) : 0,
+    ]
+  );
+
+  res.status(201).json({
+    id: result.insertId,
+    title,
+    artist_id,
+    album_id,
+    genre,
+    file_url,
+    url: file_url,
+    duration,
+  });
+};
+
+// @desc    Delete a song
+// @route   DELETE /api/songs/:id
+// @access  Private/Admin
+const deleteSong = async (req, res) => {
+  const [existingSongs] = await mysqlPool.query(
+    'SELECT id, hls_path FROM songs WHERE id = ?',
+    [req.params.id]
+  );
+
+  if (existingSongs.length === 0) {
+    return res.status(404).json({
+      message: 'Song not found',
+    });
+  }
+
+  const song = existingSongs[0];
+
+  await mysqlPool.query('DELETE FROM songs WHERE id = ?', [req.params.id]);
+
+  if (song.hls_path) {
+    const hlsFullPath = path.join(process.cwd(), song.hls_path);
+
+    try {
+      if (fs.existsSync(hlsFullPath)) {
+        fs.rmSync(hlsFullPath, { recursive: true, force: true });
+        console.log('[DELETE] Encrypted HLS folder deleted:', hlsFullPath);
+      }
+    } catch (error) {
+      console.warn('[DELETE WARNING] Could not delete HLS folder:', error.message);
+    }
+  }
+
+  res.json({
+    message: 'Song removed',
+  });
+};
+
+// @desc    Update a song
+// @route   PUT /api/songs/:id
+// @access  Private/Admin
+const updateSong = async (req, res) => {
+  try {
+    const { title, artist_id, album_id, genre, duration, file_url } = req.body;
+
+    const audioFile = req.files?.audio?.[0];
+    const coverFile = req.files?.coverImage?.[0];
+
+    const [existingSongs] = await mysqlPool.query(
+      'SELECT * FROM songs WHERE id = ?',
+      [req.params.id]
+    );
+
+    if (existingSongs.length === 0) {
+      return res.status(404).json({
+        message: 'Song not found',
+      });
+    }
+
+    const existingSong = existingSongs[0];
+
+    let finalFileUrl = file_url || existingSong.file_url;
+    let finalHlsPath = existingSong.hls_path;
+    let finalEncryptionKey = existingSong.encryption_key;
+    let finalKeyIv = existingSong.key_iv;
+
+    if (audioFile) {
+      console.log('[UPDATE ENCRYPTION] New audio uploaded. Encrypting...');
+
+      const hlsResult = await createEncryptedHls(audioFile.path);
+
+      finalHlsPath = hlsResult.hlsPath;
+      finalEncryptionKey = hlsResult.encryptionKey;
+      finalKeyIv = hlsResult.iv;
+      finalFileUrl = `/api/songs/stream/${req.params.id}/master.m3u8`;
+
+      try {
+        if (fs.existsSync(audioFile.path)) {
+          fs.unlinkSync(audioFile.path);
+          console.log('[UPDATE CLEANUP] Raw updated audio deleted:', audioFile.path);
+        }
+      } catch (cleanupError) {
+        console.warn('[UPDATE CLEANUP WARNING]', cleanupError.message);
+      }
+
+      if (existingSong.hls_path) {
+        const oldHlsPath = path.join(process.cwd(), existingSong.hls_path);
+
+        try {
+          if (fs.existsSync(oldHlsPath)) {
+            fs.rmSync(oldHlsPath, { recursive: true, force: true });
+            console.log('[UPDATE CLEANUP] Old encrypted HLS deleted:', oldHlsPath);
+          }
+        } catch (oldCleanupError) {
+          console.warn('[UPDATE CLEANUP WARNING]', oldCleanupError.message);
+        }
+      }
+    }
+
+    await mysqlPool.query(
+      `
+      UPDATE songs
+      SET 
+        title = ?,
+        artist_id = ?,
+        album_id = ?,
+        genre = ?,
+        file_url = ?,
+        duration = ?,
+        hls_path = ?,
+        encryption_key = ?,
+        key_iv = ?
+      WHERE id = ?
+      `,
+      [
+        title || existingSong.title,
+        artist_id || existingSong.artist_id,
+        album_id !== undefined ? album_id : existingSong.album_id,
+        genre || existingSong.genre,
+        finalFileUrl,
+        duration ? Math.round(Number(duration)) : existingSong.duration,
+        finalHlsPath,
+        finalEncryptionKey,
+        finalKeyIv,
+        req.params.id,
+      ]
+    );
+
+    if (coverFile) {
+      const finalArtistId = artist_id || existingSong.artist_id;
+
+      await mysqlPool.query(
+        `
+        UPDATE artists
+        SET profile_image = ?
+        WHERE id = ?
+        `,
+        [`/uploads/covers/${coverFile.filename}`, finalArtistId]
+      );
+    }
+
+    const [updatedSongs] = await mysqlPool.query(
+      `
+      SELECT 
+        songs.id,
+        songs.title,
+        songs.genre,
+        songs.file_url,
+        songs.file_url AS url,
+        songs.duration,
+        songs.created_at,
+        songs.artist_id,
+        songs.album_id,
+        songs.hls_path,
+        artists.name AS artist,
+        artists.profile_image AS coverImage,
+        artists.profile_image AS cover_image,
+        albums.title AS album
+      FROM songs
+      LEFT JOIN artists ON songs.artist_id = artists.id
+      LEFT JOIN albums ON songs.album_id = albums.id
+      WHERE songs.id = ?
+      `,
+      [req.params.id]
+    );
+
+    res.json(updatedSongs[0]);
+  } catch (error) {
+    console.error('Update song error:', error);
+
+    res.status(500).json({
+      message: 'Update failed',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get current user songs
+// @route   GET /api/songs/my
+// @access  Private
+const getMySongs = async (req, res) => {
+  const [songs] = await mysqlPool.query(`
+    SELECT 
+      songs.id,
+      songs.title,
+      songs.genre,
+      songs.file_url,
+      songs.file_url AS url,
+      songs.duration,
+      songs.created_at,
+      songs.artist_id,
+      songs.album_id,
+      songs.hls_path,
+      artists.name AS artist,
+      artists.profile_image AS coverImage,
+      artists.profile_image AS cover_image,
+      albums.title AS album
+    FROM songs
+    LEFT JOIN artists ON songs.artist_id = artists.id
+    LEFT JOIN albums ON songs.album_id = albums.id
+    ORDER BY songs.created_at DESC
+  `);
+
+  res.json(songs);
+};
+
+export {
+  getSongs,
+  getSongById,
+  createSong,
+  deleteSong,
+  updateSong,
+  getMySongs,
+  uploadSong,
+};
