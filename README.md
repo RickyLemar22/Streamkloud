@@ -358,17 +358,17 @@ Webhook Support
 
 ## Deployment
 ## Frontend
-Deploy using:
-Vercel
-Netlify
+May Deploy using either:
+GCP, Azure,AWS,Vercel or
+Netlify.
 
 ## Backend
-Planning to Deploy using:
-AWS 
-Render
-Railway
-DigitalOcean
+ May Deploy using either:
+AWS,GCP, Azure,Render, Railway
+or DigitalOcean
 
+## Our choice: for deployment 
+AWS
 
 ## Database
 
