@@ -17,6 +17,7 @@ import songRoutes from './routes/songRoutes.js';
 import artistRoutes from './routes/artistRoutes.js';
 import albumRoutes from './routes/albumRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
+import paymentRoutes from './routes/paymentRoutes.js';
 
 dotenv.config();
 
@@ -33,6 +34,10 @@ if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASSWO
 
 if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
   console.warn('⚠️ Google OAuth settings are incomplete. Continue with Google may fail.');
+}
+
+if (!process.env.FLW_PUBLIC_KEY || !process.env.FLW_SECRET_KEY || !process.env.FLW_SECRET_HASH) {
+  console.warn('⚠️ Flutterwave settings are incomplete. Payments/webhooks may fail.');
 }
 
 connectDB();
@@ -73,6 +78,7 @@ app.get('/api', (req, res) => {
     auth: 'MySQL + JWT + Google OAuth',
     email: 'Nodemailer SMTP',
     storage: 'local uploads',
+    payments: 'Flutterwave',
   });
 });
 
@@ -83,6 +89,7 @@ app.get('/api/health', (req, res) => {
     auth: 'MySQL + JWT + Google OAuth',
     email: 'Nodemailer SMTP',
     storage: 'local uploads',
+    payments: 'Flutterwave',
     timestamp: new Date().toISOString(),
   });
 });
@@ -93,6 +100,7 @@ app.use('/api/songs', songRoutes);
 app.use('/api/artists', artistRoutes);
 app.use('/api/albums', albumRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/payments', paymentRoutes);
 
 app.all('/api/*', (req, res) => {
   res.status(404).json({
@@ -122,11 +130,12 @@ if (process.env.NODE_ENV !== 'production') {
 app.use(notFound);
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log('--- SERVER IS LISTENING ---');
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
   console.log(`API health check: http://localhost:${PORT}/api/health`);
   console.log(`Local uploads available at http://localhost:${PORT}/uploads`);
+  console.log(`Flutterwave webhook: http://localhost:${PORT}/api/payments/flutterwave/webhook`);
 });

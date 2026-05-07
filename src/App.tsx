@@ -61,6 +61,17 @@ function ProtectedAdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function PaymentCallbackRedirect() {
+  const location = useLocation();
+
+  return (
+    <Navigate
+      to={`/subscription${location.search || ''}`}
+      replace
+    />
+  );
+}
+
 function AppContent() {
   const location = useLocation();
   const isAdminPage = location.pathname.startsWith('/admin');
@@ -85,6 +96,11 @@ function AppContent() {
           <Route path="/subscription" element={<Subscription />} />
           <Route path="/library" element={<Library />} />
           <Route path="/auth-success" element={<AuthSuccess />} />
+
+          {/* Flutterwave payment redirect route */}
+          <Route path="/payment/callback" element={<PaymentCallbackRedirect />} />
+          <Route path="/payment/success" element={<PaymentCallbackRedirect />} />
+          <Route path="/payment/failed" element={<PaymentCallbackRedirect />} />
 
           <Route
             path="/admin"

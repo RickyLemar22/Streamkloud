@@ -12,6 +12,8 @@ type StoredUser = {
   subscription?: any;
 };
 
+const API_BASE_URL = 'http://localhost:5000';
+
 const getStoredUser = (): StoredUser | null => {
   try {
     const admin = localStorage.getItem('admin');
@@ -32,7 +34,7 @@ const updateStoredUser = (subscription: any) => {
     localStorage.setItem(key, JSON.stringify({ ...JSON.parse(current), subscription }));
     window.dispatchEvent(new Event('auth-change'));
   } catch {
-    // Keep the UI usable even if localStorage parsing fails.
+    // Keep UI usable if localStorage parsing fails.
   }
 };
 
@@ -41,12 +43,12 @@ const PLANS = [
     id: 'free',
     name: 'Free',
     price: 'UGX 0',
-    period: 'forever',
+    period: '',
     description: 'Ad-supported listening',
     features: ['Standard quality audio', 'Ad-supported', 'Limited skips'],
     icon: Info,
     color: 'text-zinc-400',
-    bg: 'bg-zinc-500/10'
+    bg: 'bg-zinc-500/10',
   },
   {
     id: 'lite',
@@ -57,7 +59,7 @@ const PLANS = [
     features: ['Everything in Free', 'Ad-free for 24h', 'Better bandwidth usage'],
     icon: Zap,
     color: 'text-blue-400',
-    bg: 'bg-blue-500/10'
+    bg: 'bg-blue-500/10',
   },
   {
     id: 'standard',
@@ -69,7 +71,7 @@ const PLANS = [
     icon: Star,
     color: 'text-purple-400',
     bg: 'bg-purple-500/10',
-    popular: true
+    popular: true,
   },
   {
     id: 'family',
@@ -80,7 +82,7 @@ const PLANS = [
     features: ['Up to 6 accounts', 'Individual profiles', 'Parental controls'],
     icon: Users,
     color: 'text-orange-500',
-    bg: 'bg-orange-500/10'
+    bg: 'bg-orange-500/10',
   },
   {
     id: 'quarterly',
@@ -91,7 +93,7 @@ const PLANS = [
     features: ['Everything in Standard', '3 months coverage', 'Priority support'],
     icon: Crown,
     color: 'text-yellow-400',
-    bg: 'bg-yellow-500/10'
+    bg: 'bg-yellow-500/10',
   },
   {
     id: 'annual',
@@ -102,8 +104,8 @@ const PLANS = [
     features: ['Everything in Standard', '12 months coverage', 'VIP experience', 'Exclusive badges'],
     icon: ShieldCheck,
     color: 'text-emerald-400',
-    bg: 'bg-emerald-500/10'
-  }
+    bg: 'bg-emerald-500/10',
+  },
 ];
 
 export function Subscription() {
@@ -124,6 +126,8 @@ export function Subscription() {
   }, []);
 
   const handleSubscribe = async (planId: string) => {
+    if (planId === 'free') return;
+
     const token = localStorage.getItem('token');
     const currentUser = getStoredUser();
 
@@ -137,43 +141,44 @@ export function Subscription() {
     }
 
     setUser(currentUser);
-
     setLoading(planId);
 
     try {
-      const expiryDate = new Date();
-      if (planId === 'free') expiryDate.setFullYear(expiryDate.getFullYear() + 100);
-      if (planId === 'lite') expiryDate.setDate(expiryDate.getDate() + 1);
-      if (planId === 'standard' || planId === 'family') expiryDate.setMonth(expiryDate.getMonth() + 1);
-      if (planId === 'quarterly') expiryDate.setMonth(expiryDate.getMonth() + 3);
-      if (planId === 'annual') expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-
-      const subscription = {
-        plan: planId,
-        status: 'active',
-        expiryDate: expiryDate.toISOString()
-      };
-
-      const response = await fetch('/api/users/subscription', {
-        method: 'PATCH',
+      const response = await fetch(`${API_BASE_URL}/api/payments/checkout`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ subscription, plan: planId }),
+        body: JSON.stringify({ plan: planId }),
       });
 
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to update subscription.');
+        throw new Error(data.message || 'Failed to create payment checkout.');
       }
 
-      updateStoredUser(data.subscription || subscription);
-      alert(`Successfully subscribed to ${planId} plan!`);
+      if (data.testMode) {
+        updateStoredUser(
+          data.subscription || {
+            plan: planId,
+            status: 'active',
+          }
+        );
+
+        alert(data.message || 'Subscription activated successfully!');
+        return;
+      }
+
+      if (!data.paymentLink) {
+        throw new Error('Payment link was not returned by the server.');
+      }
+
+      window.location.href = data.paymentLink;
     } catch (error) {
       console.error('Error subscribing:', error);
-      alert(error instanceof Error ? error.message : 'Failed to update subscription.');
+      alert(error instanceof Error ? error.message : 'Failed to start subscription payment.');
     } finally {
       setLoading(null);
     }
@@ -192,51 +197,61 @@ export function Subscription() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {PLANS.map((plan) => (
-            <div 
-              key={plan.id}
-              className={cn(
-                "relative flex flex-col p-8 rounded-3xl border transition-all duration-300",
-                plan.popular 
-                  ? "bg-zinc-900 border-orange-500/50 shadow-2xl shadow-orange-500/10 scale-105 z-10" 
-                  : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
-              )}
-            >
-              {plan.popular && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-orange-500 text-black text-xs font-black px-4 py-1 rounded-full uppercase tracking-wider">
-                  Most Popular
-                </div>
-              )}
+          {PLANS.map((plan) => {
+            const isFreePlan = plan.id === 'free';
 
-              <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center mb-6", plan.bg)}>
-                <plan.icon className={cn("w-6 h-6", plan.color)} />
-              </div>
-
-              <h3 className="text-xl font-bold text-white mb-2">{plan.name}</h3>
-              <div className="flex items-baseline gap-x-1 mb-4">
-                <span className="text-3xl font-black text-white">{plan.price}</span>
-                <span className="text-zinc-500">/{plan.period}</span>
-              </div>
-              <p className="text-zinc-400 text-sm mb-8">{plan.description}</p>
-
-              <div className="space-y-4 mb-8 flex-1">
-                {plan.features.map((feature, i) => (
-                  <div key={i} className="flex items-center gap-x-3 text-sm text-zinc-300">
-                    <Check className="w-4 h-4 text-orange-500 shrink-0" />
-                    {feature}
-                  </div>
-                ))}
-              </div>
-
-              <Button 
-                onClick={() => handleSubscribe(plan.id)}
-                disabled={loading !== null}
-                className="w-full h-12 rounded-xl font-bold transition-all bg-orange-500 hover:bg-orange-600 text-black disabled:opacity-70 disabled:cursor-not-allowed"
+            return (
+              <div
+                key={plan.id}
+                className={cn(
+                  'relative flex flex-col p-8 rounded-3xl border transition-all duration-300',
+                  plan.popular
+                    ? 'bg-zinc-900 border-orange-500/50 shadow-2xl shadow-orange-500/10 scale-105 z-10'
+                    : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-700'
+                )}
               >
-                {loading === plan.id ? 'Processing...' : 'Subscribe Now'}
-              </Button>
-            </div>
-          ))}
+                {plan.popular && (
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-orange-500 text-black text-xs font-black px-4 py-1 rounded-full uppercase tracking-wider">
+                    Most Popular
+                  </div>
+                )}
+
+                <div className={cn('w-12 h-12 rounded-2xl flex items-center justify-center mb-6', plan.bg)}>
+                  <plan.icon className={cn('w-6 h-6', plan.color)} />
+                </div>
+
+                <h3 className="text-xl font-bold text-white mb-2">{plan.name}</h3>
+
+                <div className="flex items-baseline gap-x-1 mb-4">
+                  <span className="text-3xl font-black text-white">{plan.price}</span>
+                  {!isFreePlan && plan.period && (
+                    <span className="text-zinc-500">/{plan.period}</span>
+                  )}
+                </div>
+
+                <p className="text-zinc-400 text-sm mb-8">{plan.description}</p>
+
+                <div className="space-y-4 mb-8 flex-1">
+                  {plan.features.map((feature, i) => (
+                    <div key={i} className="flex items-center gap-x-3 text-sm text-zinc-300">
+                      <Check className="w-4 h-4 text-orange-500 shrink-0" />
+                      {feature}
+                    </div>
+                  ))}
+                </div>
+
+                {!isFreePlan && (
+                  <Button
+                    onClick={() => handleSubscribe(plan.id)}
+                    disabled={loading !== null}
+                    className="w-full h-12 rounded-xl font-bold transition-all bg-orange-500 hover:bg-orange-600 text-black disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    {loading === plan.id ? 'Processing...' : 'Subscribe Now'}
+                  </Button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

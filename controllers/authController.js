@@ -1,7 +1,10 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/mysql.js';
-import sendEmail from '../utils/sendEmail.js';
+import {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+} from '../utils/sendEmail.js';
 
 const generateToken = (user) => {
   return jwt.sign(
@@ -32,24 +35,6 @@ const buildUserResponse = (user) => {
     subscription: user.subscription || null,
     is_verified: user.is_verified,
   };
-};
-
-const sendCodeEmail = async ({ to, subject, code, purpose }) => {
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-      <h2>StreamKloud ${purpose}</h2>
-      <p>Your verification code is:</p>
-      <h1 style="letter-spacing: 4px;">${code}</h1>
-      <p>This code expires in 15 minutes.</p>
-      <p>If you did not request this, please ignore this email.</p>
-    </div>
-  `;
-
-  await sendEmail({
-    to,
-    subject,
-    html,
-  });
 };
 
 export const registerUser = async (req, res) => {
@@ -90,26 +75,31 @@ export const registerUser = async (req, res) => {
            password = ?,
            verification_code = ?,
            verification_code_expires = ?,
+           reset_code = NULL,
+           reset_code_expires = NULL,
            is_verified = 0,
            auth_provider = 'local'
        WHERE id = ?`,
-      [name.trim(), hashedPassword, verificationCode, verificationExpires, existingUser.id]
+      [
+        name.trim(),
+        hashedPassword,
+        verificationCode,
+        verificationExpires,
+        existingUser.id,
+      ]
     );
 
-    await sendCodeEmail({
-      to: normalizedEmail,
-      subject: 'Verify your StreamKloud email',
+    await sendVerificationEmail({
+      email: normalizedEmail,
+      name: name.trim(),
       code: verificationCode,
-      purpose: 'Email Verification',
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: 'Verification code sent. Please verify your email.',
       email: normalizedEmail,
     });
-
-    return;
   }
 
   const verificationCode = generateSixDigitCode();
@@ -120,14 +110,19 @@ export const registerUser = async (req, res) => {
     `INSERT INTO users
      (name, email, password, verification_code, verification_code_expires, is_verified, auth_provider)
      VALUES (?, ?, ?, ?, ?, 0, 'local')`,
-    [name.trim(), normalizedEmail, hashedPassword, verificationCode, verificationExpires]
+    [
+      name.trim(),
+      normalizedEmail,
+      hashedPassword,
+      verificationCode,
+      verificationExpires,
+    ]
   );
 
-  await sendCodeEmail({
-    to: normalizedEmail,
-    subject: 'Verify your StreamKloud email',
+  await sendVerificationEmail({
+    email: normalizedEmail,
+    name: name.trim(),
     code: verificationCode,
-    purpose: 'Email Verification',
   });
 
   res.status(201).json({
@@ -162,7 +157,9 @@ export const authUser = async (req, res) => {
 
   if (user.auth_provider === 'google' && !user.password) {
     res.status(400);
-    throw new Error('This account uses Google sign-in. Please continue with Google.');
+    throw new Error(
+      'This account uses Google sign-in. Please continue with Google.'
+    );
   }
 
   const isPasswordValid = await bcrypt.compare(password, user.password || '');
@@ -225,11 +222,10 @@ export const sendVerificationCode = async (req, res) => {
     [verificationCode, verificationExpires, user.id]
   );
 
-  await sendCodeEmail({
-    to: normalizedEmail,
-    subject: 'Verify your StreamKloud email',
+  await sendVerificationEmail({
+    email: normalizedEmail,
+    name: user.name,
     code: verificationCode,
-    purpose: 'Email Verification',
   });
 
   res.json({
@@ -265,8 +261,11 @@ export const verifyCode = async (req, res) => {
     throw new Error('No verification code found. Please request a new code.');
   }
 
-  const codeMatches = String(user.verification_code).trim() === String(code).trim();
-  const codeExpired = new Date(user.verification_code_expires).getTime() < Date.now();
+  const codeMatches =
+    String(user.verification_code).trim() === String(code).trim();
+
+  const codeExpired =
+    new Date(user.verification_code_expires).getTime() < Date.now();
 
   if (!codeMatches || codeExpired) {
     res.status(400);
@@ -322,7 +321,9 @@ export const forgotPassword = async (req, res) => {
 
   if (user.auth_provider === 'google' && !user.password) {
     res.status(400);
-    throw new Error('This account uses Google sign-in. Password reset is not available.');
+    throw new Error(
+      'This account uses Google sign-in. Password reset is not available.'
+    );
   }
 
   const resetCode = generateSixDigitCode();
@@ -336,11 +337,10 @@ export const forgotPassword = async (req, res) => {
     [resetCode, resetExpires, user.id]
   );
 
-  await sendCodeEmail({
-    to: normalizedEmail,
-    subject: 'Reset your StreamKloud password',
+  await sendPasswordResetEmail({
+    email: normalizedEmail,
+    name: user.name,
     code: resetCode,
-    purpose: 'Password Reset',
   });
 
   res.json({
@@ -382,7 +382,9 @@ export const resetPassword = async (req, res) => {
   }
 
   const codeMatches = String(user.reset_code).trim() === String(code).trim();
-  const codeExpired = new Date(user.reset_code_expires).getTime() < Date.now();
+
+  const codeExpired =
+    new Date(user.reset_code_expires).getTime() < Date.now();
 
   if (!codeMatches || codeExpired) {
     res.status(400);

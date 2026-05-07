@@ -78,7 +78,7 @@ export function AuthModal() {
         role: userData.role || 'user',
         userType: userData.userType || 'user',
         photoURL: userData.photoURL || '',
-        subscription: userData.subscription,
+        subscription: userData.subscription || null,
       })
     );
 
@@ -169,6 +169,13 @@ export function AuthModal() {
     return data;
   };
 
+  const handleGoogleLogin = () => {
+    setGoogleLoading(true);
+    setError(null);
+
+    window.location.href = 'http://localhost:5000/api/auth/google';
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -240,15 +247,11 @@ export function AuthModal() {
         throw new Error(data.message || 'Invalid verification code.');
       }
 
-      if (data.token || data.user || data.admin || data.userType) {
-        saveBackendAuth(data);
-      }
+      saveBackendAuth(data);
 
       setVerificationCode('');
-      setLoading(false);
       close();
       navigate('/');
-      return;
     } catch (err: any) {
       setError(err.message || 'Failed to verify code.');
     } finally {
@@ -317,19 +320,6 @@ export function AuthModal() {
       setError(err.message || 'Password reset failed.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setGoogleLoading(true);
-    setError(null);
-
-    try {
-      throw new Error('Google login is not configured yet.');
-    } catch (err: any) {
-      setError(err.message || 'Google login failed.');
-    } finally {
-      setGoogleLoading(false);
     }
   };
 
@@ -508,7 +498,11 @@ export function AuthModal() {
                 disabled={loading || googleLoading}
                 className="h-12 w-full gap-x-3 rounded-xl border-zinc-800 bg-zinc-900/50 text-white hover:bg-zinc-800"
               >
-                {googleLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Chrome className="h-5 w-5" />}
+                {googleLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Chrome className="h-5 w-5" />
+                )}
                 Continue with Google
               </Button>
 
@@ -602,7 +596,13 @@ export function AuthModal() {
                   disabled={loading || googleLoading}
                   className="h-12 w-full rounded-xl bg-orange-500 font-bold text-black hover:bg-orange-400"
                 >
-                  {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : mode === 'login' ? 'Log In' : 'Sign Up'}
+                  {loading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : mode === 'login' ? (
+                    'Log In'
+                  ) : (
+                    'Sign Up'
+                  )}
                 </Button>
               </form>
             </>
