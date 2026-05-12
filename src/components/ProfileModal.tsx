@@ -61,6 +61,7 @@ export function ProfileModal() {
     localStorage.removeItem('user');
     localStorage.removeItem('admin');
     window.dispatchEvent(new Event('auth-change'));
+    window.dispatchEvent(new Event('authUpdated'));
     setUser(null);
   };
 

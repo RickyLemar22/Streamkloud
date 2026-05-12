@@ -1,18 +1,28 @@
 import jwt from 'jsonwebtoken';
 import mysqlPool from '../config/mysql.js';
 
-const protect = async (req, res, next) => {
-  let token;
-
+const getTokenFromRequest = (req) => {
   const authHeader = req.headers.authorization;
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1];
+    return authHeader.split(' ')[1];
   }
+
+  // Needed for HLS playback because browsers/HLS segment requests cannot always
+  // attach Authorization headers to .m3u8, .key and .ts files.
+  if (req.query?.token && typeof req.query.token === 'string') {
+    return req.query.token;
+  }
+
+  return null;
+};
+
+const protect = async (req, res, next) => {
+  const token = getTokenFromRequest(req);
 
   if (!token) {
     return res.status(401).json({
-      message: 'Not authorized, no token provided',
+      message: 'Please login to continue',
     });
   }
 
@@ -32,7 +42,7 @@ const protect = async (req, res, next) => {
 
       if (admins.length === 0) {
         return res.status(401).json({
-          message: 'Admin account no longer exists',
+          message: 'Please login again',
         });
       }
 
@@ -40,6 +50,20 @@ const protect = async (req, res, next) => {
         ...admins[0],
         userType: 'admin',
         isAdmin: true,
+      };
+
+      return next();
+    }
+
+    if (decoded && decoded.id && decoded.email && decoded.name) {
+      req.user = {
+        id: decoded.id,
+        name: decoded.name,
+        email: decoded.email,
+        role: decoded.role || 'user',
+        userType: decoded.userType || 'user',
+        isAdmin: false,
+        is_verified: decoded.is_verified === 1 || decoded.is_verified === true,
       };
 
       return next();
@@ -57,21 +81,21 @@ const protect = async (req, res, next) => {
 
     if (users.length === 0) {
       return res.status(401).json({
-        message: 'User account no longer exists',
+        message: 'Please login again',
       });
     }
 
     req.user = {
       ...users[0],
+      role: 'user',
       userType: 'user',
       isAdmin: false,
     };
 
-    next();
+    return next();
   } catch (error) {
     return res.status(401).json({
-      message: 'Not authorized, token failed',
-      error: error.message,
+      message: 'Your session has expired. Please login again',
     });
   }
 };

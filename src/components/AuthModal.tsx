@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import {
   Dialog,
@@ -18,7 +18,9 @@ import { useAuthModal } from '../store/useAuthModal';
 
 export function AuthModal() {
   const { isOpen, close, mode, setMode } = useAuthModal();
+
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,12 +29,25 @@ export function AuthModal() {
   const [verificationCode, setVerificationCode] = useState('');
   const [resetCode, setResetCode] = useState('');
 
-  const [verificationPurpose, setVerificationPurpose] = useState<'signup' | 'reset'>('signup');
+  const [verificationPurpose, setVerificationPurpose] = useState<
+    'signup' | 'reset'
+  >('signup');
 
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const redirectUser = (isAdmin = false) => {
+    if (isAdmin) {
+      navigate('/admin');
+      return;
+    }
+
+    const from = location.state?.from?.pathname || '/';
+
+    navigate(from, { replace: true });
+  };
 
   const saveBackendAuth = (data: any) => {
     if (data.token) {
@@ -43,6 +58,7 @@ export function AuthModal() {
       localStorage.setItem('admin', JSON.stringify(data.admin));
       localStorage.removeItem('user');
       window.dispatchEvent(new Event('auth-change'));
+      window.dispatchEvent(new Event('authUpdated'));
       return;
     }
 
@@ -56,11 +72,12 @@ export function AuthModal() {
           role: data.role,
           userType: 'admin',
           isAdmin: true,
-        })
+        }),
       );
 
       localStorage.removeItem('user');
       window.dispatchEvent(new Event('auth-change'));
+      window.dispatchEvent(new Event('authUpdated'));
       return;
     }
 
@@ -79,10 +96,11 @@ export function AuthModal() {
         userType: userData.userType || 'user',
         photoURL: userData.photoURL || '',
         subscription: userData.subscription || null,
-      })
+      }),
     );
 
     window.dispatchEvent(new Event('auth-change'));
+    window.dispatchEvent(new Event('authUpdated'));
   };
 
   const tryAdminLogin = async () => {
@@ -200,7 +218,7 @@ export function AuthModal() {
 
       if (adminData) {
         close();
-        navigate('/admin');
+        redirectUser(true);
         return;
       }
 
@@ -208,11 +226,7 @@ export function AuthModal() {
 
       close();
 
-      if (userData.userType === 'admin' || userData.admin) {
-        navigate('/admin');
-      } else {
-        navigate('/');
-      }
+      redirectUser(userData.userType === 'admin' || userData.admin);
     } catch (err: any) {
       setError(err.message || 'Authentication failed.');
     } finally {
@@ -251,7 +265,7 @@ export function AuthModal() {
 
       setVerificationCode('');
       close();
-      navigate('/');
+      redirectUser(false);
     } catch (err: any) {
       setError(err.message || 'Failed to verify code.');
     } finally {
@@ -384,14 +398,18 @@ export function AuthModal() {
                   placeholder="123456"
                   value={verificationCode}
                   onChange={(e) =>
-                    setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))
+                    setVerificationCode(
+                      e.target.value.replace(/\D/g, '').slice(0, 6),
+                    )
                   }
                   required
                   className="h-14 rounded-xl border-zinc-800 bg-zinc-900 text-center text-2xl font-bold tracking-[0.5em] text-white focus-visible:ring-orange-500"
                 />
               </div>
 
-              {error && <p className="text-center text-xs text-red-500">{error}</p>}
+              {error && (
+                <p className="text-center text-xs text-red-500">{error}</p>
+              )}
 
               <Button
                 type="submit"
@@ -434,14 +452,20 @@ export function AuthModal() {
                 />
               </div>
 
-              {error && <p className="text-center text-xs text-red-500">{error}</p>}
+              {error && (
+                <p className="text-center text-xs text-red-500">{error}</p>
+              )}
 
               <Button
                 type="submit"
                 disabled={loading}
                 className="h-12 w-full rounded-xl bg-orange-500 font-bold text-black hover:bg-orange-400"
               >
-                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Send Reset Code'}
+                {loading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  'Send Reset Code'
+                )}
               </Button>
 
               <button
@@ -474,19 +498,29 @@ export function AuthModal() {
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors hover:text-zinc-300"
                   >
-                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    {showPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
                   </button>
                 </div>
               </div>
 
-              {error && <p className="text-center text-xs text-red-500">{error}</p>}
+              {error && (
+                <p className="text-center text-xs text-red-500">{error}</p>
+              )}
 
               <Button
                 type="submit"
                 disabled={loading || password.length < 6}
                 className="h-12 w-full rounded-xl bg-orange-500 font-bold text-black hover:bg-orange-400"
               >
-                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Reset Password'}
+                {loading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  'Reset Password'
+                )}
               </Button>
             </form>
           ) : (
@@ -527,7 +561,7 @@ export function AuthModal() {
 
                     <Input
                       id="name"
-                      placeholder="John Paul"
+                      placeholder="Paul Makula/"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                       required
@@ -572,7 +606,11 @@ export function AuthModal() {
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors hover:text-zinc-300"
                     >
-                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      {showPassword ? (
+                        <EyeOff className="h-5 w-5" />
+                      ) : (
+                        <Eye className="h-5 w-5" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -589,7 +627,9 @@ export function AuthModal() {
                   </div>
                 )}
 
-                {error && <p className="text-center text-xs text-red-500">{error}</p>}
+                {error && (
+                  <p className="text-center text-xs text-red-500">{error}</p>
+                )}
 
                 <Button
                   type="submit"

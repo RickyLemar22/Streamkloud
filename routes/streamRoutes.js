@@ -11,32 +11,6 @@ const getUserIdFromRequest = (req) => {
   return req.user?.id || req.user?._id || req.user?.userId;
 };
 
-const hasActiveSubscription = async (userId) => {
-  const [rows] = await mysqlPool.query(
-    `
-    SELECT 
-      us.id,
-      us.user_id,
-      us.plan_id,
-      us.status,
-      us.start_date,
-      us.end_date,
-      sp.name AS plan_name,
-      sp.billing_cycle
-    FROM user_subscriptions us
-    INNER JOIN subscription_plans sp ON us.plan_id = sp.id
-    WHERE us.user_id = ?
-      AND us.status = 'active'
-      AND us.start_date <= NOW()
-      AND (us.end_date IS NULL OR us.end_date > NOW())
-    LIMIT 1
-    `,
-    [userId]
-  );
-
-  return rows.length > 0;
-};
-
 const getSongForStreaming = async (songId) => {
   const [songs] = await mysqlPool.query(
     `
@@ -57,12 +31,38 @@ const getSongForStreaming = async (songId) => {
   return songs.length > 0 ? songs[0] : null;
 };
 
+const getSafeHlsPath = (hlsPath, fileName) => {
+  const basePath = path.resolve(process.cwd(), hlsPath || '');
+  const requestedPath = path.resolve(basePath, fileName);
+
+  if (!requestedPath.startsWith(basePath)) {
+    return null;
+  }
+
+  return requestedPath;
+};
+
+const getKeyBuffer = (storedKey) => {
+  if (Buffer.isBuffer(storedKey)) {
+    return storedKey;
+  }
+
+  const keyString = String(storedKey || '').trim();
+
+  // Most encrypted-HLS helpers store the AES-128 key as 32 hex characters.
+  if (/^[a-fA-F0-9]{32}$/.test(keyString)) {
+    return Buffer.from(keyString, 'hex');
+  }
+
+  return Buffer.from(keyString, 'utf8');
+};
+
 const verifyStreamingAccess = async (req, res) => {
   const userId = getUserIdFromRequest(req);
 
   if (!userId) {
     res.status(401).json({
-      message: 'Authentication required',
+      message: 'Please login to play this song',
     });
     return null;
   }
@@ -78,16 +78,7 @@ const verifyStreamingAccess = async (req, res) => {
 
   if (!song.hls_path || !song.encryption_key) {
     res.status(400).json({
-      message: 'This song is not yet available as a protected encrypted stream',
-    });
-    return null;
-  }
-
-  const allowed = await hasActiveSubscription(userId);
-
-  if (!allowed) {
-    res.status(403).json({
-      message: 'Active subscription required to stream this song',
+      message: 'This song is not ready for protected streaming',
     });
     return null;
   }
@@ -97,21 +88,20 @@ const verifyStreamingAccess = async (req, res) => {
 
 // @desc    Serve protected encrypted HLS manifest
 // @route   GET /api/songs/stream/:id/master.m3u8
-// @access  Private/Subscribed
+// @access  Private logged-in user
 router.get('/songs/stream/:id/master.m3u8', protect, async (req, res) => {
   try {
     const song = await verifyStreamingAccess(req, res);
     if (!song) return;
 
-    const manifestPath = path.join(
-      process.cwd(),
-      song.hls_path,
-      'master.m3u8'
-    );
+    const token = req.query.token ? String(req.query.token) : '';
+    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
 
-    if (!fs.existsSync(manifestPath)) {
+    const manifestPath = getSafeHlsPath(song.hls_path, 'master.m3u8');
+
+    if (!manifestPath || !fs.existsSync(manifestPath)) {
       return res.status(404).json({
-        message: 'Manifest file not found',
+        message: 'Stream file not found',
       });
     }
 
@@ -119,12 +109,12 @@ router.get('/songs/stream/:id/master.m3u8', protect, async (req, res) => {
 
     manifest = manifest.replace(
       /URI="stream\.key"/g,
-      `URI="/api/songs/stream/${song.id}/key"`
+      `URI="/api/songs/stream/${song.id}/key${tokenQuery}"`
     );
 
     manifest = manifest.replace(
       /^(segment_[^\s]+\.ts)$/gm,
-      `/api/songs/stream/${song.id}/$1`
+      `/api/songs/stream/${song.id}/$1${tokenQuery}`
     );
 
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
@@ -134,36 +124,37 @@ router.get('/songs/stream/:id/master.m3u8', protect, async (req, res) => {
     console.error('[STREAM MANIFEST ERROR]', error);
 
     res.status(500).json({
-      message: 'Failed to load stream manifest',
-      error: error.message,
+      message: 'Unable to load song',
     });
   }
 });
 
-// @desc    Deliver AES key after subscription verification
+// @desc    Deliver AES key after login verification
 // @route   GET /api/songs/stream/:id/key
-// @access  Private/Subscribed
+// @access  Private logged-in user
 router.get('/songs/stream/:id/key', protect, async (req, res) => {
   try {
     const song = await verifyStreamingAccess(req, res);
     if (!song) return;
 
+    const keyBuffer = getKeyBuffer(song.encryption_key);
+
     res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', keyBuffer.length);
     res.setHeader('Cache-Control', 'no-store');
-    res.send(song.encryption_key);
+    res.send(keyBuffer);
   } catch (error) {
     console.error('[STREAM KEY ERROR]', error);
 
     res.status(500).json({
-      message: 'Failed to deliver stream key',
-      error: error.message,
+      message: 'Unable to load song key',
     });
   }
 });
 
 // @desc    Serve encrypted HLS segment
 // @route   GET /api/songs/stream/:id/:segment
-// @access  Private/Subscribed
+// @access  Private logged-in user
 router.get('/songs/stream/:id/:segment', protect, async (req, res) => {
   try {
     const song = await verifyStreamingAccess(req, res);
@@ -171,21 +162,17 @@ router.get('/songs/stream/:id/:segment', protect, async (req, res) => {
 
     const segment = req.params.segment;
 
-    if (!/^segment_\d+\.ts$/.test(segment)) {
+    if (!/^segment_[\w.-]+\.ts$/.test(segment)) {
       return res.status(400).json({
-        message: 'Invalid segment request',
+        message: 'Invalid stream request',
       });
     }
 
-    const segmentPath = path.join(
-      process.cwd(),
-      song.hls_path,
-      segment
-    );
+    const segmentPath = getSafeHlsPath(song.hls_path, segment);
 
-    if (!fs.existsSync(segmentPath)) {
+    if (!segmentPath || !fs.existsSync(segmentPath)) {
       return res.status(404).json({
-        message: 'Segment not found',
+        message: 'Stream segment not found',
       });
     }
 
@@ -197,8 +184,7 @@ router.get('/songs/stream/:id/:segment', protect, async (req, res) => {
     console.error('[STREAM SEGMENT ERROR]', error);
 
     res.status(500).json({
-      message: 'Failed to stream segment',
-      error: error.message,
+      message: 'Unable to stream song',
     });
   }
 });

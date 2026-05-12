@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Bell, LogOut, Search } from 'lucide-react';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
@@ -6,7 +6,7 @@ import { Input } from './ui/input';
 import { AuthModal } from './AuthModal';
 import { ProfileModal } from './ProfileModal';
 import { Logo } from './Logo';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { useAuthModal } from '@/store/useAuthModal';
 import { useProfileModal } from '@/store/useProfileModal';
@@ -42,16 +42,52 @@ const getStoredUser = (): StoredUser | null => {
 
 export function Header() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [user, setUser] = useState<StoredUser | null>(() => getStoredUser());
   const { open: openAuth } = useAuthModal();
   const { open: openProfile } = useProfileModal();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
   const isAuthenticated = Boolean(user && token);
 
   const unreadCount = notifications.filter((notification) => !notification.isRead).length;
+
+  useEffect(() => {
+    if (location.pathname !== '/search') {
+      setSearchQuery('');
+      return;
+    }
+
+    const params = new URLSearchParams(location.search);
+    setSearchQuery(params.get('q') || '');
+  }, [location.pathname, location.search]);
+
+  const handleTopSearchChange = (value: string) => {
+    setSearchQuery(value);
+
+    const trimmedValue = value.trim();
+
+    if (trimmedValue) {
+      navigate(`/search?q=${encodeURIComponent(trimmedValue)}`);
+    } else if (location.pathname === '/search') {
+      navigate('/search');
+    }
+  };
+
+  const handleTopSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const trimmedValue = searchQuery.trim();
+
+    if (trimmedValue) {
+      navigate(`/search?q=${encodeURIComponent(trimmedValue)}`);
+    } else {
+      navigate('/search');
+    }
+  };
 
   useEffect(() => {
     const syncAuth = () => setUser(getStoredUser());
@@ -92,6 +128,7 @@ export function Header() {
     localStorage.removeItem('user');
     localStorage.removeItem('admin');
     window.dispatchEvent(new Event('auth-change'));
+    window.dispatchEvent(new Event('authUpdated'));
     setUser(null);
     navigate('/');
   };
@@ -134,13 +171,24 @@ export function Header() {
 
   return (
     <header className="h-16 lg:h-20 bg-zinc-950/50 lg:bg-transparent backdrop-blur-xl lg:backdrop-blur-none flex items-center justify-between px-3 lg:px-8 sticky top-0 z-40 shrink-0 border-b border-zinc-900/50 lg:border-none">
-      <div className="hidden lg:flex flex-1 max-w-2xl relative group">
-        <Input 
-          placeholder="Search songs, artists..." 
+      <form
+        onSubmit={handleTopSearchSubmit}
+        className="hidden lg:flex flex-1 max-w-2xl relative group"
+      >
+        <Input
+          value={searchQuery}
+          onChange={(event) => handleTopSearchChange(event.target.value)}
+          placeholder="Search songs, artists..."
           className="bg-zinc-900/50 border-zinc-800/50 h-12 pl-6 pr-12 rounded-full text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-orange-500/50 transition-all duration-300 group-hover:bg-zinc-900"
         />
-        <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
-      </div>
+        <button
+          type="submit"
+          className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 group-hover:text-zinc-300 transition-colors"
+          aria-label="Search"
+        >
+          <Search className="w-5 h-5" />
+        </button>
+      </form>
 
       <Link to="/" className="lg:hidden group">
         <Logo className="scale-90 origin-left" />

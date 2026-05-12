@@ -8,15 +8,24 @@ import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-const generalUploadsDir = path.join(process.cwd(), 'uploads', 'general');
-
-if (!fs.existsSync(generalUploadsDir)) {
-  fs.mkdirSync(generalUploadsDir, { recursive: true });
-}
+const allowedFolders = ['general', 'covers', 'songs'];
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, generalUploadsDir);
+    const requestedFolder = req.body.folder || 'general';
+    const folder = allowedFolders.includes(requestedFolder)
+      ? requestedFolder
+      : 'general';
+
+    const uploadDir = path.join(process.cwd(), 'uploads', folder);
+
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    req.uploadFolder = folder;
+
+    cb(null, uploadDir);
   },
 
   filename: (req, file, cb) => {

@@ -21,6 +21,7 @@ const router = express.Router();
 // Ensure local upload folders exist
 const songsDir = path.join(process.cwd(), 'uploads', 'songs');
 const coversDir = path.join(process.cwd(), 'uploads', 'covers');
+const songCoversDir = path.join(process.cwd(), 'uploads', 'covers', 'song_covers');
 
 if (!fs.existsSync(songsDir)) {
   fs.mkdirSync(songsDir, { recursive: true });
@@ -30,13 +31,17 @@ if (!fs.existsSync(coversDir)) {
   fs.mkdirSync(coversDir, { recursive: true });
 }
 
+if (!fs.existsSync(songCoversDir)) {
+  fs.mkdirSync(songCoversDir, { recursive: true });
+}
+
 // Local disk storage configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     if (file.fieldname === 'audio') {
       cb(null, songsDir);
     } else if (file.fieldname === 'coverImage' || file.fieldname === 'image') {
-      cb(null, coversDir);
+      cb(null, songCoversDir);
     } else {
       cb(null, path.join(process.cwd(), 'uploads'));
     }

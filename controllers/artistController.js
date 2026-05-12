@@ -5,7 +5,12 @@ import mysqlPool from '../config/mysql.js';
 // @access  Public
 const getArtists = async (req, res) => {
   const [artists] = await mysqlPool.query(`
-    SELECT id, name, profile_image AS imageUrl
+    SELECT 
+      id,
+      name,
+      bio,
+      profile_image AS imageUrl,
+      created_at
     FROM artists
     ORDER BY created_at DESC
   `);

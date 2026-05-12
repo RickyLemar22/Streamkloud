@@ -11,8 +11,9 @@ const generateToken = (user) => {
     {
       id: user.id,
       email: user.email,
-      role: user.role || 'user',
-      userType: user.userType || 'user',
+      name: user.name || '',
+      userType: 'user',
+      is_verified: Number(user.is_verified || 0),
     },
     process.env.JWT_SECRET,
     { expiresIn: '30d' }
@@ -27,13 +28,13 @@ const buildUserResponse = (user) => {
   return {
     id: user.id,
     name: user.name,
-    displayName: user.displayName || user.name,
+    displayName: user.name,
     email: user.email,
-    role: user.role || 'user',
-    userType: user.userType || 'user',
-    photoURL: user.photoURL || '',
-    subscription: user.subscription || null,
-    is_verified: user.is_verified,
+    role: 'user',
+    userType: 'user',
+    photoURL: '',
+    subscription: null,
+    is_verified: Number(user.is_verified || 0),
   };
 };
 
@@ -53,7 +54,10 @@ export const registerUser = async (req, res) => {
   const normalizedEmail = email.trim().toLowerCase();
 
   const [existingUsers] = await pool.query(
-    'SELECT * FROM users WHERE email = ? LIMIT 1',
+    `SELECT id, name, email, password, is_verified, auth_provider
+     FROM users
+     WHERE email = ?
+     LIMIT 1`,
     [normalizedEmail]
   );
 
@@ -125,7 +129,7 @@ export const registerUser = async (req, res) => {
     code: verificationCode,
   });
 
-  res.status(201).json({
+  return res.status(201).json({
     success: true,
     message: 'Registration successful. Verification code sent.',
     id: result.insertId,
@@ -144,7 +148,10 @@ export const authUser = async (req, res) => {
   const normalizedEmail = email.trim().toLowerCase();
 
   const [users] = await pool.query(
-    'SELECT * FROM users WHERE email = ? LIMIT 1',
+    `SELECT id, name, email, password, is_verified, auth_provider
+     FROM users
+     WHERE email = ?
+     LIMIT 1`,
     [normalizedEmail]
   );
 
@@ -174,13 +181,11 @@ export const authUser = async (req, res) => {
     throw new Error('Please verify your email before logging in.');
   }
 
-  const token = generateToken(user);
-
-  res.json({
+  return res.json({
     success: true,
-    token,
+    token: generateToken(user),
     user: buildUserResponse(user),
-    userType: user.userType || 'user',
+    userType: 'user',
   });
 };
 
@@ -195,7 +200,10 @@ export const sendVerificationCode = async (req, res) => {
   const normalizedEmail = email.trim().toLowerCase();
 
   const [users] = await pool.query(
-    'SELECT * FROM users WHERE email = ? LIMIT 1',
+    `SELECT id, name, email, is_verified, auth_provider
+     FROM users
+     WHERE email = ?
+     LIMIT 1`,
     [normalizedEmail]
   );
 
@@ -228,7 +236,7 @@ export const sendVerificationCode = async (req, res) => {
     code: verificationCode,
   });
 
-  res.json({
+  return res.json({
     success: true,
     message: 'Verification code sent.',
   });
@@ -245,7 +253,10 @@ export const verifyCode = async (req, res) => {
   const normalizedEmail = email.trim().toLowerCase();
 
   const [users] = await pool.query(
-    'SELECT * FROM users WHERE email = ? LIMIT 1',
+    `SELECT id, name, email, verification_code, verification_code_expires, is_verified, auth_provider
+     FROM users
+     WHERE email = ?
+     LIMIT 1`,
     [normalizedEmail]
   );
 
@@ -286,14 +297,12 @@ export const verifyCode = async (req, res) => {
     is_verified: 1,
   };
 
-  const token = generateToken(verifiedUser);
-
-  res.json({
+  return res.json({
     success: true,
     message: 'Email verified successfully.',
-    token,
+    token: generateToken(verifiedUser),
     user: buildUserResponse(verifiedUser),
-    userType: verifiedUser.userType || 'user',
+    userType: 'user',
   });
 };
 
@@ -308,7 +317,10 @@ export const forgotPassword = async (req, res) => {
   const normalizedEmail = email.trim().toLowerCase();
 
   const [users] = await pool.query(
-    'SELECT * FROM users WHERE email = ? LIMIT 1',
+    `SELECT id, name, email, password, auth_provider
+     FROM users
+     WHERE email = ?
+     LIMIT 1`,
     [normalizedEmail]
   );
 
@@ -343,7 +355,7 @@ export const forgotPassword = async (req, res) => {
     code: resetCode,
   });
 
-  res.json({
+  return res.json({
     success: true,
     message: 'Password reset code sent.',
   });
@@ -365,7 +377,10 @@ export const resetPassword = async (req, res) => {
   const normalizedEmail = email.trim().toLowerCase();
 
   const [users] = await pool.query(
-    'SELECT * FROM users WHERE email = ? LIMIT 1',
+    `SELECT id, name, email, reset_code, reset_code_expires, password, auth_provider
+     FROM users
+     WHERE email = ?
+     LIMIT 1`,
     [normalizedEmail]
   );
 
@@ -398,12 +413,15 @@ export const resetPassword = async (req, res) => {
      SET password = ?,
          reset_code = NULL,
          reset_code_expires = NULL,
+         verification_code = NULL,
+         verification_code_expires = NULL,
+         is_verified = 1,
          auth_provider = 'local'
      WHERE id = ?`,
     [hashedPassword, user.id]
   );
 
-  res.json({
+  return res.json({
     success: true,
     message: 'Password reset successful. You can now log in.',
   });

@@ -4,10 +4,16 @@ const uploadFile = async (req, res) => {
     throw new Error('No file uploaded');
   }
 
-  const fileUrl = `/uploads/general/${req.file.filename}`;
+  const folder = req.uploadFolder || req.body.folder || 'general';
+
+  const fileUrl = `/uploads/${folder}/${req.file.filename}`;
 
   res.status(201).json({
     message: 'File uploaded successfully using local storage',
+
+    url: fileUrl,
+    fileUrl: fileUrl,
+
     file: {
       originalName: req.file.originalname,
       filename: req.file.filename,

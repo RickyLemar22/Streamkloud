@@ -6,7 +6,7 @@ import session from 'express-session';
 import passport from './config/googleAuth.js';
 import { createServer as createViteServer } from 'vite';
 
-import connectDB from './config/db.js';
+//import connectDB from './config/db.js';
 import { testMySQLConnection } from './config/mysql.js';
 
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
@@ -14,6 +14,7 @@ import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import songRoutes from './routes/songRoutes.js';
+import streamRoutes from './routes/streamRoutes.js';
 import artistRoutes from './routes/artistRoutes.js';
 import albumRoutes from './routes/albumRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
@@ -40,7 +41,7 @@ if (!process.env.FLW_PUBLIC_KEY || !process.env.FLW_SECRET_KEY || !process.env.F
   console.warn('⚠️ Flutterwave settings are incomplete. Payments/webhooks may fail.');
 }
 
-connectDB();
+//connectDB();
 testMySQLConnection();
 
 const app = express();
@@ -97,6 +98,11 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/songs', songRoutes);
+
+// Protected encrypted HLS stream routes.
+// Final URL becomes: /api/songs/stream/:id/master.m3u8
+app.use('/api', streamRoutes);
+
 app.use('/api/artists', artistRoutes);
 app.use('/api/albums', albumRoutes);
 app.use('/api/upload', uploadRoutes);
@@ -137,5 +143,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
   console.log(`API health check: http://localhost:${PORT}/api/health`);
   console.log(`Local uploads available at http://localhost:${PORT}/uploads`);
+  console.log(`Protected stream example: http://localhost:${PORT}/api/songs/stream/1/master.m3u8`);
   console.log(`Flutterwave webhook: http://localhost:${PORT}/api/payments/flutterwave/webhook`);
 });

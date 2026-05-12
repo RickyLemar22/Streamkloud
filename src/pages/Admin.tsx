@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { uploadFile } from '../lib/storage';
 
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -32,19 +33,28 @@ import {
   UserCircle,
   LogOut,
   PlusCircle,
+  Edit,
+  Save,
+  X,
 } from 'lucide-react';
 
 type Song = {
   id: string | number;
   title: string;
   artist?: string;
+  artist_id?: string | number;
   album?: string;
+  album_id?: string | number;
   genre?: string;
   file_url?: string;
   url?: string;
   coverImage?: string;
   cover_image?: string;
   duration?: number;
+  release_year?: string | number;
+  year?: string | number;
+  featured_artists?: string | string[];
+  featuring?: string | string[];
 };
 
 type Artist = {
@@ -59,7 +69,10 @@ type Album = {
   id: string | number;
   title: string;
   artist?: string;
-  artist_id?: number;
+  artist_id?: string | number;
+  coverUrl?: string;
+  cover_url?: string;
+  releaseYear?: string | number;
   release_date?: string;
 };
 
@@ -69,6 +82,7 @@ type AppUser = {
   name: string;
   email: string;
   created_at?: string;
+  banned?: boolean;
 };
 
 const getSafeId = (item: any, fallback: string) => {
@@ -87,16 +101,47 @@ const Admin = () => {
   const [artist, setArtist] = useState('');
   const [album, setAlbum] = useState('');
   const [genre, setGenre] = useState('');
+  const [releaseYear, setReleaseYear] = useState('');
+  const [featuredArtists, setFeaturedArtists] = useState<string[]>([]);
+  const [featuredArtistInput, setFeaturedArtistInput] = useState('');
+  const [filteredFeaturedArtists, setFilteredFeaturedArtists] = useState<Artist[]>([]);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
 
   const [newArtistName, setNewArtistName] = useState('');
   const [newArtistBio, setNewArtistBio] = useState('');
-  const [newArtistImageUrl, setNewArtistImageUrl] = useState('');
+  const [newArtistImageFile, setNewArtistImageFile] = useState<File | null>(null);
 
   const [newAlbumTitle, setNewAlbumTitle] = useState('');
   const [newAlbumArtistId, setNewAlbumArtistId] = useState('');
   const [newAlbumReleaseDate, setNewAlbumReleaseDate] = useState('');
+  const [newAlbumCoverFile, setNewAlbumCoverFile] = useState<File | null>(null);
+
+  // Artist search helpers for song upload and album creation forms
+  const [artistQuery, setArtistQuery] = useState('');
+  const [filteredSongArtists, setFilteredSongArtists] = useState<Artist[]>([]);
+  const [filteredAlbumArtists, setFilteredAlbumArtists] = useState<Artist[]>([]);
+  const [editArtistImageFile, setEditArtistImageFile] = useState<File | null>(null);
+
+  // user management
+  const [userActionLoading, setUserActionLoading] = useState(false);
+
+  // Edit state
+  const [editingSong, setEditingSong] = useState<Song | null>(null);
+  const [editingArtist, setEditingArtist] = useState<Artist | null>(null);
+  const [editingAlbum, setEditingAlbum] = useState<Album | null>(null);
+
+  // Edit form data
+  const [editTitle, setEditTitle] = useState('');
+  const [editArtist, setEditArtist] = useState('');
+  const [editAlbum, setEditAlbum] = useState('');
+  const [editGenre, setEditGenre] = useState('');
+  const [editArtistName, setEditArtistName] = useState('');
+  const [editArtistBio, setEditArtistBio] = useState('');
+  const [editArtistImageUrl, setEditArtistImageUrl] = useState('');
+  const [editAlbumTitle, setEditAlbumTitle] = useState('');
+  const [editAlbumArtistId, setEditAlbumArtistId] = useState('');
+  const [editAlbumReleaseDate, setEditAlbumReleaseDate] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -108,6 +153,16 @@ const Admin = () => {
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Editing state for inline edits
+  const [editingSongId, setEditingSongId] = useState<string | number | null>(null);
+  const [editingSongValues, setEditingSongValues] = useState<any>({});
+
+  const [editingArtistId, setEditingArtistId] = useState<string | number | null>(null);
+  const [editingArtistValues, setEditingArtistValues] = useState<any>({});
+
+  const [editingAlbumId, setEditingAlbumId] = useState<string | number | null>(null);
+  const [editingAlbumValues, setEditingAlbumValues] = useState<any>({});
 
   const token = localStorage.getItem('token');
   const storedAdmin = localStorage.getItem('admin');
@@ -261,12 +316,20 @@ const Admin = () => {
       setLoading(true);
       setError('');
 
-      await Promise.all([
+      const results = await Promise.allSettled([
         fetchSongs(),
         fetchArtists(),
         fetchAlbums(),
         fetchUsers(),
       ]);
+
+      const failedSections = ['songs', 'artists', 'albums', 'users'].filter(
+        (_section, index) => results[index].status === 'rejected'
+      );
+
+      if (failedSections.length > 0) {
+        console.warn('Some admin sections failed to load:', failedSections);
+      }
     } catch (err) {
       console.error('Admin fetch error:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch admin data.');
@@ -280,6 +343,32 @@ const Admin = () => {
       fetchAll();
     }
   }, [isAdmin]);
+
+  const addFeaturedArtist = (name?: string) => {
+    const selectedName = (name || featuredArtistInput).trim();
+
+    if (!selectedName) return;
+
+    const alreadyAdded = featuredArtists.some(
+      (artistName) => artistName.toLowerCase() === selectedName.toLowerCase()
+    );
+
+    const isMainArtist = artist.trim().toLowerCase() === selectedName.toLowerCase();
+
+    if (alreadyAdded || isMainArtist) {
+      setFeaturedArtistInput('');
+      setFilteredFeaturedArtists([]);
+      return;
+    }
+
+    setFeaturedArtists((previous) => [...previous, selectedName]);
+    setFeaturedArtistInput('');
+    setFilteredFeaturedArtists([]);
+  };
+
+  const removeFeaturedArtist = (name: string) => {
+    setFeaturedArtists((previous) => previous.filter((artistName) => artistName !== name));
+  };
 
   const handleUploadSong = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -312,7 +401,11 @@ const Admin = () => {
       formData.append('artist', artist.trim());
       formData.append('album', album.trim());
       formData.append('genre', genre.trim() || 'Unknown');
+      formData.append('release_year', releaseYear.trim());
+      formData.append('year', releaseYear.trim());
       formData.append('duration', String(duration || 0));
+      formData.append('featured_artists', JSON.stringify(featuredArtists));
+      formData.append('featuring', featuredArtists.join(', '));
       formData.append('audio', audioFile);
 
       if (coverFile) {
@@ -341,6 +434,9 @@ const Admin = () => {
       setArtist('');
       setAlbum('');
       setGenre('');
+      setFeaturedArtists([]);
+      setFeaturedArtistInput('');
+      setFilteredFeaturedArtists([]);
       setAudioFile(null);
       setCoverFile(null);
 
@@ -372,13 +468,18 @@ const Admin = () => {
       setError('');
       setSuccess('');
 
+      let imageUrl = '';
+      if (newArtistImageFile) {
+        imageUrl = await uploadFile(newArtistImageFile, 'general');
+      }
+
       const response = await fetch('/api/artists', {
         method: 'POST',
         headers: jsonAuthHeaders,
         body: JSON.stringify({
           name: newArtistName.trim(),
           bio: newArtistBio.trim(),
-          imageUrl: newArtistImageUrl.trim(),
+          imageUrl: imageUrl,
         }),
       });
 
@@ -391,7 +492,7 @@ const Admin = () => {
       setSuccess('Artist added successfully.');
       setNewArtistName('');
       setNewArtistBio('');
-      setNewArtistImageUrl('');
+      setNewArtistImageFile(null);
 
       await fetchArtists();
       setActiveTab('artists');
@@ -416,6 +517,11 @@ const Admin = () => {
       setError('');
       setSuccess('');
 
+      let coverUrl = '';
+      if (newAlbumCoverFile) {
+        coverUrl = await uploadFile(newAlbumCoverFile, 'covers');
+      }
+
       const response = await fetch('/api/albums', {
         method: 'POST',
         headers: jsonAuthHeaders,
@@ -423,6 +529,7 @@ const Admin = () => {
           title: newAlbumTitle.trim(),
           artist_id: Number(newAlbumArtistId),
           release_date: newAlbumReleaseDate || null,
+          coverUrl: coverUrl || null,
         }),
       });
 
@@ -436,6 +543,8 @@ const Admin = () => {
       setNewAlbumTitle('');
       setNewAlbumArtistId('');
       setNewAlbumReleaseDate('');
+      setNewAlbumCoverFile(null);
+      setArtistQuery('');
 
       await fetchAlbums();
       setActiveTab('albums');
@@ -479,6 +588,147 @@ const Admin = () => {
     }
   };
 
+  // -------- Editing handlers --------
+  const handleSaveSongEdit = async (songId: string | number) => {
+    if (!token) {
+      setError('No admin token found.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      setSuccess('');
+
+      const formData = new FormData();
+      formData.append('title', editingSongValues.title || '');
+      formData.append('genre', editingSongValues.genre || '');
+      if (editingSongValues.file_url) formData.append('file_url', editingSongValues.file_url);
+      if (editingSongValues.artist_id) formData.append('artist_id', String(editingSongValues.artist_id));
+      if (editingSongValues.album_id) formData.append('album_id', String(editingSongValues.album_id));
+      if (editingSongValues.audioFile) formData.append('audio', editingSongValues.audioFile);
+      if (editingSongValues.coverFile) formData.append('coverImage', editingSongValues.coverFile);
+
+      const response = await fetch(`/api/songs/${songId}`, {
+        method: 'PUT',
+        headers: authHeaders, // Authorization only; let browser set Content-Type for FormData
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Update failed.');
+
+      setSuccess('Song updated successfully.');
+      setEditingSongId(null);
+      setEditingSongValues({});
+      await fetchAll();
+    } catch (err) {
+      console.error('Save song edit error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update song.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelSongEdit = () => {
+    setEditingSongId(null);
+    setEditingSongValues({});
+  };
+
+  const handleSaveArtistEdit = async (artistId: string | number) => {
+    if (!token) {
+      setError('No admin token found.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      setSuccess('');
+
+      let imageUrl = editingArtistValues.imageUrl || '';
+      if (editArtistImageFile) {
+        imageUrl = await uploadFile(editArtistImageFile, 'general');
+      }
+
+      const body = {
+        name: editingArtistValues.name || '',
+        bio: editingArtistValues.bio || '',
+        imageUrl,
+      };
+
+      const response = await fetch(`/api/artists/${artistId}`, {
+        method: 'PUT',
+        headers: jsonAuthHeaders,
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Update artist failed.');
+
+      setSuccess('Artist updated successfully.');
+      setEditingArtistId(null);
+      setEditingArtistValues({});
+      setEditArtistImageFile(null);
+      await fetchArtists();
+    } catch (err) {
+      console.error('Save artist edit error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update artist.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelArtistEdit = () => {
+    setEditingArtistId(null);
+    setEditingArtistValues({});
+    setEditArtistImageFile(null);
+  };
+
+  const handleSaveAlbumEdit = async (albumId: string | number) => {
+    if (!token) {
+      setError('No admin token found.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      setSuccess('');
+
+      const body = {
+        title: editingAlbumValues.title || '',
+        artistId: editingAlbumValues.artistId || editingAlbumValues.artist_id || null,
+        coverUrl: editingAlbumValues.coverUrl || '',
+        releaseYear: editingAlbumValues.releaseYear || editingAlbumValues.release_date || null,
+      };
+
+      const response = await fetch(`/api/albums/${albumId}`, {
+        method: 'PUT',
+        headers: jsonAuthHeaders,
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Update album failed.');
+
+      setSuccess('Album updated successfully.');
+      setEditingAlbumId(null);
+      setEditingAlbumValues({});
+      await fetchAlbums();
+    } catch (err) {
+      console.error('Save album edit error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update album.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelAlbumEdit = () => {
+    setEditingAlbumId(null);
+    setEditingAlbumValues({});
+  };
+
   if (!isAdmin) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black p-6">
@@ -506,7 +756,7 @@ const Admin = () => {
   }
 
   return (
-    <div className="min-h-screen w-full bg-black px-4 py-4 text-white sm:px-6 lg:px-8 xl:px-12">
+    <div className="h-screen min-h-screen w-full overflow-y-auto bg-black px-4 py-4 text-white sm:px-6 lg:px-8 xl:px-12">
       <div className="mx-auto flex w-full max-w-[1900px] flex-col gap-6">
         <div className="flex items-center justify-end gap-3">
           <div
@@ -643,8 +893,87 @@ const Admin = () => {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Artist</Label>
-                      <Input value={artist} onChange={(e) => setArtist(e.target.value)} placeholder="Artist name" required />
+                      <Label>Main Artist</Label>
+                      <Input
+                        value={artist}
+                        onChange={(e) => {
+                          setArtist(e.target.value);
+                          const q = e.target.value.toLowerCase();
+                          setFilteredSongArtists(artists.filter((a) => a.name.toLowerCase().includes(q)));
+                        }}
+                        placeholder="Search or type main artist name"
+                        required
+                      />
+                      {artist && filteredSongArtists.length > 0 && (
+                        <div className="max-h-48 overflow-y-auto bg-zinc-900 border border-zinc-800 mt-1 rounded">
+                          {filteredSongArtists.map((a) => (
+                            <div key={`suggest-${a.id}`} className="p-2 hover:bg-zinc-800 cursor-pointer" onClick={() => { setArtist(a.name); setFilteredSongArtists([]); }}>
+                              {a.name}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-2 xl:col-span-2">
+                      <Label>Featured Artists Optional</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={featuredArtistInput}
+                          onChange={(e) => {
+                            setFeaturedArtistInput(e.target.value);
+                            const q = e.target.value.trim().toLowerCase();
+                            setFilteredFeaturedArtists(
+                              q
+                                ? artists.filter(
+                                    (a) =>
+                                      a.name.toLowerCase().includes(q) &&
+                                      a.name.toLowerCase() !== artist.trim().toLowerCase() &&
+                                      !featuredArtists.some((name) => name.toLowerCase() === a.name.toLowerCase())
+                                  )
+                                : []
+                            );
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              addFeaturedArtist();
+                            }
+                          }}
+                          placeholder="Search or type featured artist name"
+                        />
+                        <Button type="button" variant="outline" onClick={() => addFeaturedArtist()}>
+                          <PlusCircle className="mr-2 h-4 w-4" />
+                          Add
+                        </Button>
+                      </div>
+
+                      {featuredArtistInput && filteredFeaturedArtists.length > 0 && (
+                        <div className="max-h-48 overflow-y-auto rounded border border-zinc-800 bg-zinc-900">
+                          {filteredFeaturedArtists.map((a) => (
+                            <div
+                              key={`featured-suggest-${a.id}`}
+                              className="cursor-pointer p-2 hover:bg-zinc-800"
+                              onClick={() => addFeaturedArtist(a.name)}
+                            >
+                              {a.name}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {featuredArtists.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {featuredArtists.map((name) => (
+                            <span key={name} className="inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-zinc-200">
+                              {name}
+                              <button type="button" className="text-zinc-400 hover:text-white" onClick={() => removeFeaturedArtist(name)}>
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -657,6 +986,18 @@ const Admin = () => {
                       <Input value={genre} onChange={(e) => setGenre(e.target.value)} placeholder="Genre" />
                     </div>
 
+                    <div className="space-y-2">
+                      <Label>Year of Release</Label>
+                      <Input
+                        type="number"
+                        min="1900"
+                        max="2100"
+                        value={releaseYear}
+                        onChange={(e) => setReleaseYear(e.target.value)}
+                        placeholder="e.g. 2017"
+                      />
+                    </div>
+
                     <div className="space-y-2 xl:col-span-2">
                       <Label>Audio File</Label>
                       <Input type="file" accept="audio/*,.mp3,.wav" onChange={(e) => setAudioFile(e.target.files?.[0] || null)} required />
@@ -666,7 +1007,9 @@ const Admin = () => {
                     <div className="space-y-2 xl:col-span-2">
                       <Label>Cover Image</Label>
                       <Input type="file" accept="image/*" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} />
-                      {coverFile && <p className="text-xs text-zinc-400">Selected: {coverFile.name}</p>}
+                      {coverFile && (
+                        <p className="text-xs text-zinc-400">Selected: {coverFile.name}</p>
+                      )}
                     </div>
                   </div>
 
@@ -738,15 +1081,80 @@ const Admin = () => {
                               {song.artist || 'Unknown Artist'} · {song.genre || 'Unknown Genre'}
                             </p>
                             {song.album && <p className="truncate text-xs text-zinc-500">Album: {song.album}</p>}
+                            {(song.featured_artists || song.featuring) && (
+                              <p className="truncate text-xs text-zinc-500">
+                                Featuring:{' '}
+                                {Array.isArray(song.featured_artists)
+                                  ? song.featured_artists.join(', ')
+                                  : song.featured_artists || song.featuring}
+                              </p>
+                            )}
                           </div>
                         </div>
 
-                        <div className="mt-3 flex items-center gap-2">
-                          {song.url && <audio src={song.url} controls className="w-full" />}
+                        <div className="mt-3">
+                          {editingSongId === song.id ? (
+                            <form className="w-full grid gap-2" onSubmit={(e) => { e.preventDefault(); handleSaveSongEdit(song.id); }}>
+                              <div className="grid gap-2 md:grid-cols-2">
+                                <div className="space-y-1">
+                                  <Label>Title</Label>
+                                  <Input value={editingSongValues.title || ''} onChange={(e) => setEditingSongValues((p:any) => ({ ...p, title: e.target.value }))} />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label>Genre</Label>
+                                  <Input value={editingSongValues.genre || ''} onChange={(e) => setEditingSongValues((p:any) => ({ ...p, genre: e.target.value }))} />
+                                </div>
+                              </div>
 
-                          <Button variant="destructive" size="sm" onClick={() => handleDeleteSong(song.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                              <div className="grid gap-2 md:grid-cols-2">
+                                <div className="space-y-1">
+                                  <Label>File URL</Label>
+                                  <Input value={editingSongValues.file_url || ''} onChange={(e) => setEditingSongValues((p:any) => ({ ...p, file_url: e.target.value }))} />
+                                </div>
+
+                                <div className="space-y-1">
+                                  <Label>Upload Audio (optional)</Label>
+                                  <input type="file" accept="audio/*" onChange={(e:any) => setEditingSongValues((p:any) => ({ ...p, audioFile: e.target.files?.[0] }))} />
+                                </div>
+                              </div>
+
+                              <div className="grid gap-2 md:grid-cols-2">
+                                <div className="space-y-1">
+                                  <Label>Cover Image (optional)</Label>
+                                  <input type="file" accept="image/*" onChange={(e:any) => setEditingSongValues((p:any) => ({ ...p, coverFile: e.target.files?.[0] }))} />
+                                </div>
+
+                                <div className="flex items-end gap-2">
+                                  <Button type="submit">Save</Button>
+                                  <Button type="button" variant="ghost" onClick={handleCancelSongEdit}>Cancel</Button>
+                                </div>
+                              </div>
+                            </form>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              {song.url && <audio src={song.url} controls className="w-full" />}
+
+                              <div className="flex gap-2">
+                                <Button variant="ghost" size="sm" onClick={() => {
+                                  setEditingSongId(song.id);
+                                  setEditingSongValues({
+                                    title: song.title || '',
+                                    artist_id: song.artist_id || song.artist || '',
+                                    album_id: song.album_id || song.album || '',
+                                    genre: song.genre || '',
+                                    file_url: song.file_url || song.url || '',
+                                  });
+                                  setActiveTab('songs');
+                                }}>
+                                  Edit
+                                </Button>
+
+                                <Button variant="destructive" size="sm" onClick={() => handleDeleteSong(song.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -777,8 +1185,11 @@ const Admin = () => {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Image URL</Label>
-                      <Input value={newArtistImageUrl} onChange={(e) => setNewArtistImageUrl(e.target.value)} placeholder="Optional image URL" />
+                      <Label>Artist Image</Label>
+                      <Input type="file" accept="image/*" onChange={(e) => setNewArtistImageFile(e.target.files?.[0] || null)} />
+                      {newArtistImageFile && (
+                        <p className="text-xs text-zinc-400">Selected: {newArtistImageFile.name}</p>
+                      )}
                     </div>
                   </div>
 
@@ -810,9 +1221,35 @@ const Admin = () => {
                           </div>
                         )}
 
-                        <div className="min-w-0">
-                          <p className="truncate font-medium">{artistItem.name}</p>
-                          {artistItem.bio && <p className="truncate text-sm text-zinc-400">{artistItem.bio}</p>}
+                        <div className="min-w-0 flex-1">
+                          {editingArtistId === artistItem.id ? (
+                            <div className="grid gap-2">
+                              <Input value={editingArtistValues.name || artistItem.name || ''} onChange={(e) => setEditingArtistValues((p:any) => ({ ...p, name: e.target.value }))} />
+                              <Input value={editingArtistValues.bio || artistItem.bio || ''} onChange={(e) => setEditingArtistValues((p:any) => ({ ...p, bio: e.target.value }))} />
+                              <Input type="file" accept="image/*" onChange={(e) => setEditArtistImageFile(e.target.files?.[0] || null)} />
+                              {editArtistImageFile && (
+                                <p className="text-xs text-zinc-400">Selected: {editArtistImageFile.name}</p>
+                              )}
+
+                              <div className="flex gap-2 mt-2">
+                                <Button onClick={() => handleSaveArtistEdit(artistItem.id)}>Save</Button>
+                                <Button variant="ghost" onClick={handleCancelArtistEdit}>Cancel</Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="truncate font-medium">{artistItem.name}</p>
+                              {artistItem.bio && <p className="truncate text-sm text-zinc-400">{artistItem.bio}</p>}
+                            </>
+                          )}
+                        </div>
+
+                        <div className="flex gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => {
+                            setEditingArtistId(artistItem.id);
+                            setEditingArtistValues({ name: artistItem.name || '', bio: artistItem.bio || '', imageUrl: artistItem.imageUrl || '' });
+                          }}>Edit</Button>
+                          {/* optionally: delete artist button could be added here */}
                         </div>
                       </div>
                     ))}
@@ -839,24 +1276,38 @@ const Admin = () => {
 
                     <div className="space-y-2">
                       <Label>Artist</Label>
-                      <select
-                        value={newAlbumArtistId}
-                        onChange={(e) => setNewAlbumArtistId(e.target.value)}
+                      <Input
+                        value={artistQuery}
+                        onChange={(e) => {
+                          setArtistQuery(e.target.value);
+                          const q = e.target.value.toLowerCase();
+                          setFilteredAlbumArtists(artists.filter((a) => a.name.toLowerCase().includes(q)));
+                        }}
+                        placeholder="Search or select artist"
                         required
-                        className="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm text-white"
-                      >
-                        <option value="">Select artist</option>
-                        {artists.map((artistItem, index) => (
-                          <option key={`artist-option-${artistItem.id}-${index}`} value={artistItem.id}>
-                            {artistItem.name}
-                          </option>
-                        ))}
-                      </select>
+                      />
+                      {artistQuery && filteredAlbumArtists.length > 0 && (
+                        <div className="max-h-48 overflow-y-auto bg-zinc-900 border border-zinc-800 mt-1 rounded">
+                          {filteredAlbumArtists.map((a) => (
+                            <div key={`suggest-album-${a.id}`} className="p-2 hover:bg-zinc-800 cursor-pointer" onClick={() => { setArtistQuery(a.name); setNewAlbumArtistId(String(a.id)); setFilteredAlbumArtists([]); }}>
+                              {a.name}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
                       <Label>Release Date</Label>
                       <Input type="date" value={newAlbumReleaseDate} onChange={(e) => setNewAlbumReleaseDate(e.target.value)} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Album Cover</Label>
+                      <Input type="file" accept="image/*" onChange={(e) => setNewAlbumCoverFile(e.target.files?.[0] || null)} />
+                      {newAlbumCoverFile && (
+                        <p className="text-xs text-zinc-400">Selected: {newAlbumCoverFile.name}</p>
+                      )}
                     </div>
                   </div>
 
@@ -880,9 +1331,28 @@ const Admin = () => {
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {albums.map((albumItem, index) => (
                       <div key={`album-${albumItem.id}-${index}`} className="rounded-lg border border-zinc-700 p-3">
-                        <p className="font-medium">{albumItem.title}</p>
-                        <p className="text-sm text-zinc-400">{albumItem.artist || 'Unknown Artist'}</p>
-                        <p className="text-xs text-zinc-500">Album ID: {albumItem.id}</p>
+                        {editingAlbumId === albumItem.id ? (
+                          <div className="grid gap-2">
+                            <Input value={editingAlbumValues.title || albumItem.title || ''} onChange={(e) => setEditingAlbumValues((p:any) => ({ ...p, title: e.target.value }))} />
+                            <Input value={editingAlbumValues.artist || albumItem.artist || ''} onChange={(e) => setEditingAlbumValues((p:any) => ({ ...p, artist: e.target.value }))} />
+                            <Input value={editingAlbumValues.releaseYear || ''} onChange={(e) => setEditingAlbumValues((p:any) => ({ ...p, releaseYear: e.target.value }))} />
+
+                            <div className="flex gap-2 mt-2">
+                              <Button onClick={() => handleSaveAlbumEdit(albumItem.id)}>Save</Button>
+                              <Button variant="ghost" onClick={handleCancelAlbumEdit}>Cancel</Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="font-medium">{albumItem.title}</p>
+                            <p className="text-sm text-zinc-400">{albumItem.artist || 'Unknown Artist'}</p>
+                            <p className="text-xs text-zinc-500">Album ID: {albumItem.id}</p>
+                          </>
+                        )}
+
+                        <div className="mt-2 flex gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => { setEditingAlbumId(albumItem.id); setEditingAlbumValues({ title: albumItem.title || '', artist: albumItem.artist || '', releaseYear: albumItem.release_year || '' }); }}>Edit</Button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -904,10 +1374,43 @@ const Admin = () => {
                 ) : (
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {users.map((user, index) => (
-                      <div key={`user-${user.id}-${index}`} className="rounded-lg border border-zinc-700 p-3">
-                        <p className="font-medium">{user.name}</p>
-                        <p className="truncate text-sm text-zinc-400">{user.email}</p>
-                        <p className="text-xs text-zinc-500">User ID: {user.id}</p>
+                      <div key={`user-${user.id}-${index}`} className="rounded-lg border border-zinc-700 p-3 flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{user.name}</p>
+                            <p className="truncate text-sm text-zinc-400">{user.email}</p>
+                            <p className="text-xs text-zinc-500">User ID: {user.id}</p>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button variant={user.banned ? 'destructive' : 'outline'} size="sm" onClick={async () => {
+                              try {
+                                const res = await fetch(`/api/users/${user.id}/ban`, { method: 'POST', headers: jsonAuthHeaders });
+                                const d = await res.json();
+                                if (!res.ok) throw new Error(d.message || 'Failed');
+                                await fetchUsers();
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : 'User action failed');
+                              }
+                            }}>
+                              {user.banned ? 'Unban' : 'Ban'}
+                            </Button>
+
+                            <Button variant="destructive" size="sm" onClick={async () => {
+                              if (!confirm('Delete this user?')) return;
+                              try {
+                                const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE', headers: jsonAuthHeaders });
+                                const d = await res.json();
+                                if (!res.ok) throw new Error(d.message || 'Delete failed');
+                                await fetchUsers();
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : 'Delete failed');
+                              }
+                            }}>
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>

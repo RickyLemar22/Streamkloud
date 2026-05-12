@@ -11,7 +11,16 @@ const uploadSong = async (req, res) => {
   console.log('[DEBUG] Files:', Object.keys(req.files || {}).join(', '));
   console.log('[DEBUG] Body Metadata:', JSON.stringify(req.body));
 
-  const { title, artist, album, genre, duration } = req.body;
+  const {
+    title,
+    artist,
+    album,
+    genre,
+    duration,
+    release_year,
+    year,
+    year_of_release,
+  } = req.body;
 
   const audioFile = req.files?.audio?.[0];
   const coverFile = req.files?.coverImage?.[0];
@@ -37,11 +46,15 @@ const uploadSong = async (req, res) => {
   const inputFilePath = audioFile.path;
 
   const coverUrl = coverFile
-    ? `/uploads/covers/${coverFile.filename}`
-    : 'https://picsum.photos/seed/music/400/400';
+    ? `/uploads/covers/song_covers/${coverFile.filename}`
+    : null;
+
+  const finalYearOfRelease =
+    year_of_release || release_year || year || null;
 
   console.log('[LOCAL FILE] Raw audio saved temporarily at:', inputFilePath);
   console.log('[LOCAL FILE] Cover saved at:', coverUrl);
+  console.log('[METADATA] Year of release:', finalYearOfRelease);
 
   let hlsResult;
 
@@ -84,24 +97,13 @@ const uploadSong = async (req, res) => {
 
     if (existingArtists.length > 0) {
       artistId = existingArtists[0].id;
-
-      if (coverUrl) {
-        await connection.query(
-          `
-          UPDATE artists 
-          SET profile_image = COALESCE(profile_image, ?)
-          WHERE id = ?
-          `,
-          [coverUrl, artistId]
-        );
-      }
     } else {
       const [artistResult] = await connection.query(
         `
         INSERT INTO artists (name, profile_image, bio)
         VALUES (?, ?, ?)
         `,
-        [artist.trim(), coverUrl, null]
+        [artist.trim(), null, null]
       );
 
       artistId = artistResult.insertId;
@@ -140,8 +142,20 @@ const uploadSong = async (req, res) => {
     const [songResult] = await connection.query(
       `
       INSERT INTO songs 
-      (title, artist_id, album_id, genre, file_url, duration, hls_path, encryption_key, key_iv)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (
+        title,
+        artist_id,
+        album_id,
+        genre,
+        file_url,
+        cover_url,
+        duration,
+        year_of_release,
+        hls_path,
+        encryption_key,
+        key_iv
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         title.trim(),
@@ -149,7 +163,9 @@ const uploadSong = async (req, res) => {
         albumId,
         genre || 'Unknown',
         '',
+        coverUrl,
         duration ? Math.round(Number(duration)) : 0,
+        finalYearOfRelease,
         hlsResult.hlsPath,
         hlsResult.encryptionKey,
         hlsResult.iv,
@@ -178,9 +194,13 @@ const uploadSong = async (req, res) => {
       url: streamUrl,
       file_url: streamUrl,
       hls_path: hlsResult.hlsPath,
+      coverUrl,
+      cover_url: coverUrl,
       coverImage: coverUrl,
       cover_image: coverUrl,
       duration: duration ? Math.round(Number(duration)) : 0,
+      year_of_release: finalYearOfRelease,
+      release_year: finalYearOfRelease,
       message: 'Song uploaded, encrypted, and saved successfully',
     });
   } catch (error) {
@@ -212,14 +232,19 @@ const getSongs = async (req, res) => {
       songs.genre,
       songs.file_url,
       songs.file_url AS url,
+      songs.cover_url,
+      songs.cover_url AS coverUrl,
+      songs.cover_url AS coverImage,
+      songs.cover_url AS cover_image,
       songs.duration,
+      songs.year_of_release,
       songs.created_at,
       songs.artist_id,
       songs.album_id,
       songs.hls_path,
       artists.name AS artist,
-      artists.profile_image AS coverImage,
-      artists.profile_image AS cover_image,
+      artists.profile_image AS artistImage,
+      artists.profile_image AS artist_image,
       albums.title AS album
     FROM songs
     LEFT JOIN artists ON songs.artist_id = artists.id
@@ -275,14 +300,19 @@ const getSongById = async (req, res) => {
       songs.genre,
       songs.file_url,
       songs.file_url AS url,
+      songs.cover_url,
+      songs.cover_url AS coverUrl,
+      songs.cover_url AS coverImage,
+      songs.cover_url AS cover_image,
       songs.duration,
+      songs.year_of_release,
       songs.created_at,
       songs.artist_id,
       songs.album_id,
       songs.hls_path,
       artists.name AS artist,
-      artists.profile_image AS coverImage,
-      artists.profile_image AS cover_image,
+      artists.profile_image AS artistImage,
+      artists.profile_image AS artist_image,
       albums.title AS album
     FROM songs
     LEFT JOIN artists ON songs.artist_id = artists.id
@@ -305,7 +335,19 @@ const getSongById = async (req, res) => {
 // @route   POST /api/songs
 // @access  Private/Admin
 const createSong = async (req, res) => {
-  const { title, artist_id, album_id, genre, file_url, duration } = req.body;
+  const {
+    title,
+    artist_id,
+    album_id,
+    genre,
+    file_url,
+    cover_url,
+    coverUrl,
+    duration,
+    year_of_release,
+    release_year,
+    year,
+  } = req.body;
 
   if (!title || !artist_id || !file_url) {
     return res.status(400).json({
@@ -313,11 +355,23 @@ const createSong = async (req, res) => {
     });
   }
 
+  const finalCoverUrl = cover_url || coverUrl || null;
+  const finalYearOfRelease = year_of_release || release_year || year || null;
+
   const [result] = await mysqlPool.query(
     `
     INSERT INTO songs 
-    (title, artist_id, album_id, genre, file_url, duration)
-    VALUES (?, ?, ?, ?, ?, ?)
+    (
+      title,
+      artist_id,
+      album_id,
+      genre,
+      file_url,
+      cover_url,
+      duration,
+      year_of_release
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       title,
@@ -325,7 +379,9 @@ const createSong = async (req, res) => {
       album_id || null,
       genre || 'Unknown',
       file_url,
+      finalCoverUrl,
       duration ? Math.round(Number(duration)) : 0,
+      finalYearOfRelease,
     ]
   );
 
@@ -337,7 +393,12 @@ const createSong = async (req, res) => {
     genre,
     file_url,
     url: file_url,
+    cover_url: finalCoverUrl,
+    coverUrl: finalCoverUrl,
+    coverImage: finalCoverUrl,
+    cover_image: finalCoverUrl,
     duration,
+    year_of_release: finalYearOfRelease,
   });
 };
 
@@ -383,7 +444,19 @@ const deleteSong = async (req, res) => {
 // @access  Private/Admin
 const updateSong = async (req, res) => {
   try {
-    const { title, artist_id, album_id, genre, duration, file_url } = req.body;
+    const {
+      title,
+      artist_id,
+      album_id,
+      genre,
+      duration,
+      file_url,
+      year_of_release,
+      release_year,
+      year,
+      cover_url,
+      coverUrl,
+    } = req.body;
 
     const audioFile = req.files?.audio?.[0];
     const coverFile = req.files?.coverImage?.[0];
@@ -402,6 +475,17 @@ const updateSong = async (req, res) => {
     const existingSong = existingSongs[0];
 
     let finalFileUrl = file_url || existingSong.file_url;
+    let finalCoverUrl =
+      coverFile
+        ? `/uploads/covers/song_covers/${coverFile.filename}`
+        : cover_url || coverUrl || existingSong.cover_url;
+
+    let finalYearOfRelease =
+      year_of_release ||
+      release_year ||
+      year ||
+      existingSong.year_of_release;
+
     let finalHlsPath = existingSong.hls_path;
     let finalEncryptionKey = existingSong.encryption_key;
     let finalKeyIv = existingSong.key_iv;
@@ -448,7 +532,9 @@ const updateSong = async (req, res) => {
         album_id = ?,
         genre = ?,
         file_url = ?,
+        cover_url = ?,
         duration = ?,
+        year_of_release = ?,
         hls_path = ?,
         encryption_key = ?,
         key_iv = ?
@@ -460,26 +546,15 @@ const updateSong = async (req, res) => {
         album_id !== undefined ? album_id : existingSong.album_id,
         genre || existingSong.genre,
         finalFileUrl,
+        finalCoverUrl,
         duration ? Math.round(Number(duration)) : existingSong.duration,
+        finalYearOfRelease,
         finalHlsPath,
         finalEncryptionKey,
         finalKeyIv,
         req.params.id,
       ]
     );
-
-    if (coverFile) {
-      const finalArtistId = artist_id || existingSong.artist_id;
-
-      await mysqlPool.query(
-        `
-        UPDATE artists
-        SET profile_image = ?
-        WHERE id = ?
-        `,
-        [`/uploads/covers/${coverFile.filename}`, finalArtistId]
-      );
-    }
 
     const [updatedSongs] = await mysqlPool.query(
       `
@@ -489,14 +564,19 @@ const updateSong = async (req, res) => {
         songs.genre,
         songs.file_url,
         songs.file_url AS url,
+        songs.cover_url,
+        songs.cover_url AS coverUrl,
+        songs.cover_url AS coverImage,
+        songs.cover_url AS cover_image,
         songs.duration,
+        songs.year_of_release,
         songs.created_at,
         songs.artist_id,
         songs.album_id,
         songs.hls_path,
         artists.name AS artist,
-        artists.profile_image AS coverImage,
-        artists.profile_image AS cover_image,
+        artists.profile_image AS artistImage,
+        artists.profile_image AS artist_image,
         albums.title AS album
       FROM songs
       LEFT JOIN artists ON songs.artist_id = artists.id
@@ -528,14 +608,19 @@ const getMySongs = async (req, res) => {
       songs.genre,
       songs.file_url,
       songs.file_url AS url,
+      songs.cover_url,
+      songs.cover_url AS coverUrl,
+      songs.cover_url AS coverImage,
+      songs.cover_url AS cover_image,
       songs.duration,
+      songs.year_of_release,
       songs.created_at,
       songs.artist_id,
       songs.album_id,
       songs.hls_path,
       artists.name AS artist,
-      artists.profile_image AS coverImage,
-      artists.profile_image AS cover_image,
+      artists.profile_image AS artistImage,
+      artists.profile_image AS artist_image,
       albums.title AS album
     FROM songs
     LEFT JOIN artists ON songs.artist_id = artists.id
