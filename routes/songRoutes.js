@@ -1,8 +1,9 @@
 import express from 'express';
 import asyncHandler from 'express-async-handler';
 import multer from 'multer';
+import multerS3 from 'multer-s3';
 import path from 'path';
-import fs from 'fs';
+import { S3Client } from '@aws-sdk/client-s3';
 
 import {
   getSongs,
@@ -18,43 +19,37 @@ import { protect, admin } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Ensure local upload folders exist
-const songsDir = path.join(process.cwd(), 'uploads', 'songs');
-const coversDir = path.join(process.cwd(), 'uploads', 'covers');
-const songCoversDir = path.join(process.cwd(), 'uploads', 'covers', 'song_covers');
-
-if (!fs.existsSync(songsDir)) {
-  fs.mkdirSync(songsDir, { recursive: true });
-}
-
-if (!fs.existsSync(coversDir)) {
-  fs.mkdirSync(coversDir, { recursive: true });
-}
-
-if (!fs.existsSync(songCoversDir)) {
-  fs.mkdirSync(songCoversDir, { recursive: true });
-}
-
-// Local disk storage configuration
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    if (file.fieldname === 'audio') {
-      cb(null, songsDir);
-    } else if (file.fieldname === 'coverImage' || file.fieldname === 'image') {
-      cb(null, songCoversDir);
-    } else {
-      cb(null, path.join(process.cwd(), 'uploads'));
-    }
+const s3 = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
+});
 
-  filename: (req, file, cb) => {
-    const safeOriginalName = file.originalname
+// S3 storage configuration
+const storage = multerS3({
+  s3,
+  bucket: process.env.AWS_S3_BUCKET,
+  contentType: multerS3.AUTO_CONTENT_TYPE,
+  key: (req, file, cb) => {
+    let folder = 'general';
+
+    if (file.fieldname === 'audio') {
+      folder = 'songs';
+    } else if (file.fieldname === 'coverImage' || file.fieldname === 'image') {
+      folder = 'covers/song_covers';
+    }
+
+    const ext = path.extname(file.originalname);
+    const baseName = path
+      .basename(file.originalname, ext)
       .replace(/\s+/g, '_')
       .replace(/[^\w.-]/g, '');
 
-    const uniqueFileName = `${Date.now()}_${safeOriginalName}`;
+    const uniqueFileName = `${Date.now()}_${baseName}${ext}`;
 
-    cb(null, uniqueFileName);
+    cb(null, `${folder}/${uniqueFileName}`);
   },
 });
 
@@ -62,7 +57,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB
+    fileSize: 50 * 1024 * 1024,
   },
   fileFilter: (req, file, cb) => {
     console.log(`Checking file: ${file.originalname} (${file.mimetype})`);
@@ -102,7 +97,7 @@ router
   .get(asyncHandler(getSongs))
   .post(protect, admin, asyncHandler(createSong));
 
-// Local song upload route
+// S3 song upload route
 router.post(
   '/upload-song',
   protect,

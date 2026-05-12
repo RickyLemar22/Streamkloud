@@ -1,41 +1,44 @@
 import express from 'express';
 import multer from 'multer';
+import multerS3 from 'multer-s3';
 import path from 'path';
-import fs from 'fs';
 
 import { uploadFile } from '../controllers/uploadController.js';
 import { protect } from '../middleware/authMiddleware.js';
+import { s3, S3_BUCKET } from '../utils/s3.js';
 
 const router = express.Router();
 
 const allowedFolders = ['general', 'covers', 'songs'];
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const requestedFolder = req.body.folder || 'general';
-    const folder = allowedFolders.includes(requestedFolder)
-      ? requestedFolder
-      : 'general';
+const getS3Folder = (req) => {
+  const requestedFolder = req.body.folder || 'general';
 
-    const uploadDir = path.join(process.cwd(), 'uploads', folder);
+  if (!allowedFolders.includes(requestedFolder)) {
+    return 'general';
+  }
 
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
+  return requestedFolder;
+};
 
-    req.uploadFolder = folder;
+const storage = multerS3({
+  s3,
+  bucket: S3_BUCKET,
+  contentType: multerS3.AUTO_CONTENT_TYPE,
+  key: (req, file, cb) => {
+    const folder = getS3Folder(req);
 
-    cb(null, uploadDir);
-  },
-
-  filename: (req, file, cb) => {
-    const safeOriginalName = file.originalname
+    const ext = path.extname(file.originalname);
+    const baseName = path
+      .basename(file.originalname, ext)
       .replace(/\s+/g, '_')
       .replace(/[^\w.-]/g, '');
 
-    const uniqueFileName = `${Date.now()}_${safeOriginalName}`;
+    const uniqueFileName = `${Date.now()}_${baseName}${ext}`;
 
-    cb(null, uniqueFileName);
+    req.uploadFolder = folder;
+
+    cb(null, `${folder}/${uniqueFileName}`);
   },
 });
 
