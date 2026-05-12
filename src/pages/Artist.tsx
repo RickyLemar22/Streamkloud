@@ -295,7 +295,7 @@ export function Artist() {
           <div className="py-12 text-center bg-zinc-900/20 rounded-2xl border border-dashed border-zinc-800">
             <Music className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
             <p className="text-zinc-500">
-              No songs have been uploaded for this artist yet.
+              No songs available for this artist yet.
             </p>
           </div>
         )}

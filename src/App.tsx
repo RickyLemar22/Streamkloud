@@ -87,7 +87,14 @@ function AppContent() {
           <Route path="/" element={<Home />} />
 
           <Route path="/search" element={<Search />} />
-          <Route path="/upload" element={<Upload />} />
+          <Route
+            path="/upload"
+            element={
+              <ProtectedAdminRoute>
+                <Upload />
+              </ProtectedAdminRoute>
+            }
+          />
           <Route path="/artist/:name" element={<Artist />} />
           <Route path="/album/:name" element={<Album />} />
           <Route path="/playlist/:id" element={<Playlist />} />
