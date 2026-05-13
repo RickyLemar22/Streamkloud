@@ -46,6 +46,8 @@ export function Player() {
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const playbackUrlRef = useRef("");
+  const shouldAutoPlayRef = useRef(false);
 
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -150,6 +152,9 @@ export function Player() {
       hlsRef.current = null;
     }
 
+    playbackUrlRef.current = "";
+    shouldAutoPlayRef.current = false;
+
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.removeAttribute("src");
@@ -247,6 +252,9 @@ export function Player() {
       hlsRef.current = null;
     }
 
+    playbackUrlRef.current = "";
+    shouldAutoPlayRef.current = Boolean(isPlaying);
+    audio.pause();
     audio.removeAttribute("src");
     audio.load();
     setProgress(0);
@@ -260,12 +268,31 @@ export function Player() {
 
     if (!playbackUrl) return;
 
+    playbackUrlRef.current = playbackUrl;
     const isHlsStream = playbackUrl.includes(".m3u8");
+
+    const playWhenReady = () => {
+      if (!shouldAutoPlayRef.current || !audioRef.current || !currentSong) return;
+
+      const playPromise = audioRef.current.play();
+
+      if (playPromise !== undefined) {
+        playPromise.catch((error) => {
+          if (error.name === "AbortError") return;
+
+          console.error("Playback failed:", error);
+          setIsPlaying(false);
+        });
+      }
+    };
 
     if (isHlsStream && Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
+        maxBufferHole: 1.5,
+        nudgeOffset: 0.2,
+        nudgeMaxRetry: 5,
         xhrSetup: (xhr) => {
           const token = getToken();
 
@@ -276,25 +303,47 @@ export function Player() {
       });
 
       hlsRef.current = hls;
-      hls.loadSource(playbackUrl);
       hls.attachMedia(audio);
 
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+        hls.loadSource(playbackUrl);
+      });
+
+      hls.on(Hls.Events.MANIFEST_PARSED, playWhenReady);
+
       hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (!data.fatal) {
+          console.warn("HLS playback warning:", data);
+          return;
+        }
+
         console.error("HLS playback error:", data);
 
-        if (data.fatal) {
-          setIsPlaying(false);
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls.startLoad();
+          return;
         }
+
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError();
+          return;
+        }
+
+        setIsPlaying(false);
       });
     } else if (isHlsStream && audio.canPlayType("application/vnd.apple.mpegurl")) {
       audio.src = playbackUrl;
       audio.load();
+      audio.addEventListener("loadedmetadata", playWhenReady, { once: true });
     } else {
       audio.src = playbackUrl;
       audio.load();
+      audio.addEventListener("loadedmetadata", playWhenReady, { once: true });
     }
 
     return () => {
+      shouldAutoPlayRef.current = false;
+
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -303,26 +352,33 @@ export function Player() {
   }, [currentSong?.id]);
 
   useEffect(() => {
-    if (!audioRef.current) return;
+    const audio = audioRef.current;
+
+    if (!audio) return;
+
+    shouldAutoPlayRef.current = Boolean(isPlaying);
 
     if (isPlaying && currentSong) {
       if (!requireAuthForSong(currentSong)) return;
 
-      const playPromise = audioRef.current.play();
+      // Do not force play while a new HLS/media source is still attaching.
+      // The source-loading effect will start playback when metadata/manifest is ready.
+      if (audio.readyState < HTMLMediaElement.HAVE_METADATA) return;
+
+      const playPromise = audio.play();
 
       if (playPromise !== undefined) {
         playPromise.catch((error) => {
-          console.error("Playback failed:", error);
+          if (error.name === "AbortError") return;
 
-          if (error.name !== "AbortError") {
-            setIsPlaying(false);
-          }
+          console.error("Playback failed:", error);
+          setIsPlaying(false);
         });
       }
     } else {
-      audioRef.current.pause();
+      audio.pause();
     }
-  }, [isPlaying, currentSong, setIsPlaying]);
+  }, [isPlaying, currentSong?.id, setIsPlaying]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -544,7 +600,7 @@ export function Player() {
         </div>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-black/95 border-t border-zinc-800 px-4 py-3">
+      <div className="fixed bottom-20 lg:bottom-8 left-0 lg:left-1/2 lg:-translate-x-1/2 w-full lg:max-w-5xl px-0 lg:px-4 z-50">
         <div className="bg-zinc-900/95 lg:bg-zinc-900/90 backdrop-blur-xl border-t lg:border border-zinc-800/50 lg:rounded-3xl p-3 lg:p-4 flex items-center justify-between shadow-2xl shadow-black/50 overflow-hidden relative group">
           <div className="absolute top-0 left-0 w-full h-1 lg:h-1.5 group/progress">
             <Slider
@@ -770,8 +826,8 @@ export function Player() {
         </div>
 
         <audio
-          key={currentSong?.id || "none"}
           ref={audioRef}
+          preload="metadata"
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
           onEnded={playNext}
