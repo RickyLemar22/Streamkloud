@@ -1,683 +1,752 @@
-import React, { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-
+import { useEffect, useRef, useState } from "react";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from './ui/dialog';
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Repeat,
+  Shuffle,
+  Volume2,
+  ListMusic,
+  Repeat1,
+  Music,
+  Heart,
+  Mic2,
+  Trash2,
+  X,
+} from "lucide-react";
+import Hls from "hls.js";
+import { usePlayerStore } from "@/store/usePlayerStore";
+import { Slider } from "./ui/slider";
+import { cn } from "@/lib/utils";
+import { Link } from "react-router-dom";
+import { ScrollArea } from "./ui/scroll-area";
+import { useAuthModal } from "@/store/useAuthModal";
+import { BACKEND_BASE_URL } from "@/lib/apiConfig";
 
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
+export function Player() {
+  const {
+    currentSong,
+    isPlaying,
+    setIsPlaying,
+    volume,
+    setVolume,
+    playNext,
+    playPrevious,
+    isShuffled,
+    repeatMode,
+    toggleShuffle,
+    toggleRepeat,
+    queue,
+    setCurrentSong,
+    likedSongs,
+    toggleLike,
+    removeFromQueue,
+  } = usePlayerStore();
 
-import { Chrome, Loader2, Eye, EyeOff } from 'lucide-react';
-import { useAuthModal } from '../store/useAuthModal';
-import { API_BASE_URL } from '@/lib/apiConfig';
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
 
-export function AuthModal() {
-  const { isOpen, close, mode, setMode } = useAuthModal();
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [showLyrics, setShowLyrics] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
 
-  const navigate = useNavigate();
-  const location = useLocation();
+  const { open } = useAuthModal();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const API_BASE_URL =
+    import.meta.env.VITE_API_URL ||
+    BACKEND_BASE_URL;
 
-  const [displayName, setDisplayName] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
-  const [resetCode, setResetCode] = useState('');
+  const getToken = () => localStorage.getItem("token") || "";
 
-  const [verificationPurpose, setVerificationPurpose] = useState<
-    'signup' | 'reset'
-  >('signup');
-
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const redirectUser = (isAdmin = false) => {
-    if (isAdmin) {
-      navigate('/admin');
-      return;
-    }
-
-    const from = location.state?.from?.pathname || '/';
-
-    navigate(from, { replace: true });
+  const isLocalSong = (song?: any) => {
+    return Boolean(song?.id?.toString().startsWith("local-"));
   };
 
-  const saveBackendAuth = (data: any) => {
-    if (data.token) {
-      localStorage.setItem('token', data.token);
+  const toAbsoluteUrl = (url?: string) => {
+    if (!url) return "";
+
+    if (
+      url.startsWith("http://") ||
+      url.startsWith("https://") ||
+      url.startsWith("blob:")
+    ) {
+      return url;
     }
 
-    if (data.admin) {
-      localStorage.setItem('admin', JSON.stringify(data.admin));
-      localStorage.removeItem('user');
-      window.dispatchEvent(new Event('auth-change'));
-      window.dispatchEvent(new Event('authUpdated'));
-      return;
+    return `${API_BASE_URL}${url.startsWith("/") ? url : `/${url}`}`;
+  };
+
+  const getPlaybackUrl = (song: any) => {
+    if (!song) return "";
+
+    if (isLocalSong(song)) {
+      return toAbsoluteUrl(song.audioUrl || song.url || song.file_url);
     }
 
-    if (data.userType === 'admin') {
-      localStorage.setItem(
-        'admin',
-        JSON.stringify({
-          id: data.id || data._id,
-          name: data.name,
-          email: data.email,
-          role: data.role,
-          userType: 'admin',
-          isAdmin: true,
-        }),
-      );
+    const rawUrl =
+      song.audioUrl ||
+      song.url ||
+      song.file_url ||
+      `/api/songs/stream/${song.id}/master.m3u8`;
 
-      localStorage.removeItem('user');
-      window.dispatchEvent(new Event('auth-change'));
-      window.dispatchEvent(new Event('authUpdated'));
-      return;
+    const absoluteUrl = toAbsoluteUrl(rawUrl);
+
+    if (!absoluteUrl.includes(".m3u8")) {
+      return absoluteUrl;
     }
 
-    localStorage.removeItem('admin');
+    const token = getToken();
+    const separator = absoluteUrl.includes("?") ? "&" : "?";
 
-    const userData = data.user || data;
+    return token
+      ? `${absoluteUrl}${separator}token=${encodeURIComponent(token)}`
+      : absoluteUrl;
+  };
 
-    localStorage.setItem(
-      'user',
-      JSON.stringify({
-        id: userData.id || userData._id,
-        name: userData.name,
-        displayName: userData.displayName || userData.name,
-        email: userData.email,
-        role: userData.role || 'user',
-        userType: userData.userType || 'user',
-        photoURL: userData.photoURL || '',
-        subscription: userData.subscription || null,
-      }),
+  const stopPlaybackCompletely = () => {
+    setIsPlaying(false);
+
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.removeAttribute("src");
+      audioRef.current.load();
+    }
+
+    setProgress(0);
+    setDuration(0);
+    setCurrentSong(null);
+    setQueueOpen(false);
+  };
+
+  const requireAuthForSong = (song?: any) => {
+    if (!song) return false;
+
+    if (isLocalSong(song)) return true;
+
+    const token = getToken();
+
+    if (!token) {
+      stopPlaybackCompletely();
+      open("login");
+      return false;
+    }
+
+    return true;
+  };
+
+  const isLiked = currentSong ? likedSongs.includes(currentSong.id) : false;
+
+  const clampVolume = (value: unknown) => {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return 0.8;
+    return Math.min(1, Math.max(0, numericValue));
+  };
+
+  const safeVolume = clampVolume(volume);
+
+  const handleVolumeChange = (val: number[]) => {
+    const rawValue = Array.isArray(val) ? val[0] : val;
+    const sliderValue = Number(rawValue);
+
+    if (!Number.isFinite(sliderValue)) return;
+
+    const nextVolume = clampVolume(sliderValue / 100);
+    setVolume(nextVolume);
+
+    if (audioRef.current) {
+      audioRef.current.volume = nextVolume;
+    }
+  };
+
+  useEffect(() => {
+    const stopOnLogout = () => {
+      const token = getToken();
+
+      if (!token) {
+        stopPlaybackCompletely();
+      }
+    };
+
+    window.addEventListener("auth-change", stopOnLogout);
+    window.addEventListener("authUpdated", stopOnLogout);
+    window.addEventListener("storage", stopOnLogout);
+
+    return () => {
+      window.removeEventListener("auth-change", stopOnLogout);
+      window.removeEventListener("authUpdated", stopOnLogout);
+      window.removeEventListener("storage", stopOnLogout);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!currentSong) return;
+
+    const recentlyPlayed = JSON.parse(
+      localStorage.getItem("recentlyPlayed") || "[]",
     );
 
-    window.dispatchEvent(new Event('auth-change'));
-    window.dispatchEvent(new Event('authUpdated'));
-  };
+    const updatedRecent = [
+      currentSong,
+      ...recentlyPlayed.filter((s: any) => s.id !== currentSong.id),
+    ].slice(0, 10);
 
-  const tryAdminLogin = async () => {
-    const response = await fetch('/api/auth/admin-login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+    localStorage.setItem("recentlyPlayed", JSON.stringify(updatedRecent));
+    window.dispatchEvent(new Event("recentlyPlayedUpdated"));
+  }, [currentSong]);
 
-    const data = await response.json().catch(() => ({}));
+  useEffect(() => {
+    const audio = audioRef.current;
 
-    if (!response.ok) return null;
+    if (!audio) return;
 
-    saveBackendAuth(data);
-    return data;
-  };
-
-  const backendUserLogin = async () => {
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(data.message || 'Login failed.');
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
     }
 
-    saveBackendAuth(data);
-    return data;
-  };
+    audio.removeAttribute("src");
+    audio.load();
+    setProgress(0);
+    setDuration(0);
 
-  const backendRegisterUser = async () => {
-    const response = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: displayName.trim(),
-        email,
-        password,
-      }),
-    });
+    if (!currentSong) return;
 
-    const data = await response.json().catch(() => ({}));
+    if (!requireAuthForSong(currentSong)) return;
 
-    if (!response.ok) {
-      throw new Error(data.message || 'Registration failed.');
-    }
+    const playbackUrl = getPlaybackUrl(currentSong);
 
-    return data;
-  };
+    if (!playbackUrl) return;
 
-  const resendVerificationCode = async () => {
-    const response = await fetch('/api/auth/send-verification', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
+    const isHlsStream = playbackUrl.includes(".m3u8");
 
-    const data = await response.json().catch(() => ({}));
+    if (isHlsStream && Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        xhrSetup: (xhr) => {
+          const token = getToken();
 
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to resend verification code.');
-    }
+          if (token) {
+            xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+          }
+        },
+      });
 
-    return data;
-  };
+      hlsRef.current = hls;
+      hls.loadSource(playbackUrl);
+      hls.attachMedia(audio);
 
-  const sendPasswordResetCode = async () => {
-    const response = await fetch('/api/auth/forgot-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        console.error("HLS playback error:", data);
 
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to send password reset code.');
-    }
-
-    return data;
-  };
-
-  const handleGoogleLogin = () => {
-    setGoogleLoading(true);
-    setError(null);
-
-    window.location.href = `${API_BASE_URL}/auth/google`;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      if (mode === 'signup') {
-        if (!displayName.trim()) {
-          throw new Error('Display name is required.');
+        if (data.fatal) {
+          setIsPlaying(false);
         }
-
-        await backendRegisterUser();
-
-        setVerificationPurpose('signup');
-        setVerificationCode('');
-        setMode('verify');
-        return;
-      }
-
-      const adminData = await tryAdminLogin();
-
-      if (adminData) {
-        close();
-        redirectUser(true);
-        return;
-      }
-
-      const userData = await backendUserLogin();
-
-      close();
-
-      redirectUser(userData.userType === 'admin' || userData.admin);
-    } catch (err: any) {
-      setError(err.message || 'Authentication failed.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      if (verificationPurpose === 'reset') {
-        setResetCode(verificationCode);
-        setVerificationCode('');
-        setPassword('');
-        setMode('reset');
-        return;
-      }
-
-      const response = await fetch('/api/auth/verify-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code: verificationCode }),
       });
+    } else if (isHlsStream && audio.canPlayType("application/vnd.apple.mpegurl")) {
+      audio.src = playbackUrl;
+      audio.load();
+    } else {
+      audio.src = playbackUrl;
+      audio.load();
+    }
 
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Invalid verification code.');
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
       }
+    };
+  }, [currentSong?.id]);
 
-      saveBackendAuth(data);
+  useEffect(() => {
+    if (!audioRef.current) return;
 
-      setVerificationCode('');
-      close();
-      redirectUser(false);
-    } catch (err: any) {
-      setError(err.message || 'Failed to verify code.');
-    } finally {
-      setLoading(false);
+    if (isPlaying && currentSong) {
+      if (!requireAuthForSong(currentSong)) return;
+
+      const playPromise = audioRef.current.play();
+
+      if (playPromise !== undefined) {
+        playPromise.catch((error) => {
+          console.error("Playback failed:", error);
+
+          if (error.name !== "AbortError") {
+            setIsPlaying(false);
+          }
+        });
+      }
+    } else {
+      audioRef.current.pause();
+    }
+  }, [isPlaying, currentSong, setIsPlaying]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = safeVolume;
+    }
+
+    if (safeVolume !== volume) {
+      setVolume(safeVolume);
+    }
+  }, [safeVolume, volume, setVolume]);
+
+  const handleTimeUpdate = () => {
+    if (!audioRef.current) return;
+
+    const t = audioRef.current.currentTime;
+    if (Number.isFinite(t)) setProgress(t);
+  };
+
+  const handleLoadedMetadata = () => {
+    if (!audioRef.current) return;
+
+    const d = audioRef.current.duration;
+    if (Number.isFinite(d)) setDuration(d);
+  };
+
+  const handleSeek = (val: number[]) => {
+    const time = val[0];
+
+    if (audioRef.current && Number.isFinite(time)) {
+      audioRef.current.currentTime = time;
+      setProgress(time);
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const formatTime = (time: number) => {
+    if (!Number.isFinite(time) || time < 0) return "0:00";
 
-    if (!email) {
-      setError('Please enter your email address.');
-      return;
-    }
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
 
-    setLoading(true);
-    setError(null);
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  };
 
-    try {
-      await sendPasswordResetCode();
-
-      setVerificationPurpose('reset');
-      setVerificationCode('');
-      setResetCode('');
-      setMode('verify');
-    } catch (err: any) {
-      setError(err.message || 'Failed to send reset code.');
-    } finally {
-      setLoading(false);
+  const handlePrevious = () => {
+    if (
+      audioRef.current &&
+      Number.isFinite(audioRef.current.currentTime) &&
+      audioRef.current.currentTime > 3
+    ) {
+      audioRef.current.currentTime = 0;
+      setProgress(0);
+    } else {
+      playPrevious();
     }
   };
 
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!email || !resetCode || !password) {
-      setError('Email, reset code, and new password are required.');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          code: resetCode,
-          newPassword: password,
-        }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Failed to reset password.');
-      }
-
-      setPassword('');
-      setResetCode('');
-      setVerificationCode('');
-      setMode('login');
-    } catch (err: any) {
-      setError(err.message || 'Password reset failed.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResendCode = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      if (verificationPurpose === 'reset') {
-        await sendPasswordResetCode();
-      } else {
-        await resendVerificationCode();
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to resend code.');
-    } finally {
-      setLoading(false);
-    }
+  const handleQueueSongClick = (song: any) => {
+    if (!requireAuthForSong(song)) return;
+    setCurrentSong(song);
+    setIsPlaying(true);
+    setQueueOpen(false);
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={close}>
-      <DialogContent className="border-zinc-800 bg-zinc-950 p-6 sm:max-w-[400px] lg:p-8">
-        <DialogHeader className="space-y-3">
-          <DialogTitle className="text-center text-2xl font-black text-white">
-            {mode === 'login'
-              ? 'Welcome Back'
-              : mode === 'verify'
-              ? verificationPurpose === 'reset'
-                ? 'Enter Reset Code'
-                : 'Verify Email'
-              : mode === 'forgot'
-              ? 'Forgot Password'
-              : mode === 'reset'
-              ? 'Reset Password'
-              : 'Create Account'}
-          </DialogTitle>
-
-          <DialogDescription className="text-center text-zinc-500">
-            {mode === 'login'
-              ? 'Log in to access your library, playlists'
-              : mode === 'verify'
-              ? `We sent a 6-digit code to ${email}`
-              : mode === 'forgot'
-              ? 'Enter your account email to receive a reset code'
-              : mode === 'reset'
-              ? 'Enter your new password'
-              : 'Join StreamKloud to start your music journey'}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-6 py-4">
-          {mode === 'verify' ? (
-            <form onSubmit={handleVerify} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="code" className="text-zinc-400">
-                  6-Digit Code
-                </Label>
-
-                <Input
-                  id="code"
-                  placeholder="123456"
-                  value={verificationCode}
-                  onChange={(e) =>
-                    setVerificationCode(
-                      e.target.value.replace(/\D/g, '').slice(0, 6),
-                    )
-                  }
-                  required
-                  className="h-14 rounded-xl border-zinc-800 bg-zinc-900 text-center text-2xl font-bold tracking-[0.5em] text-white focus-visible:ring-orange-500"
-                />
-              </div>
-
-              {error && (
-                <p className="text-center text-xs text-red-500">{error}</p>
-              )}
-
-              <Button
-                type="submit"
-                disabled={loading || verificationCode.length !== 6}
-                className="h-12 w-full rounded-xl bg-orange-500 font-bold text-black hover:bg-orange-400"
-              >
-                {loading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : verificationPurpose === 'reset' ? (
-                  'Continue'
-                ) : (
-                  'Verify & Continue'
-                )}
-              </Button>
-
-              <button
-                type="button"
-                onClick={handleResendCode}
-                disabled={loading}
-                className="w-full text-sm text-zinc-500 transition-colors hover:text-white"
-              >
-                Didn&apos;t receive a code? Resend
-              </button>
-            </form>
-          ) : mode === 'forgot' ? (
-            <form onSubmit={handleForgotPassword} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="forgot-email" className="text-zinc-400">
-                  Email Address
-                </Label>
-
-                <Input
-                  id="forgot-email"
-                  type="email"
-                  placeholder="name@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="h-12 rounded-xl border-zinc-800 bg-zinc-900 text-white focus-visible:ring-orange-500"
-                />
-              </div>
-
-              {error && (
-                <p className="text-center text-xs text-red-500">{error}</p>
-              )}
-
-              <Button
-                type="submit"
-                disabled={loading}
-                className="h-12 w-full rounded-xl bg-orange-500 font-bold text-black hover:bg-orange-400"
-              >
-                {loading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  'Send Reset Code'
-                )}
-              </Button>
-
-              <button
-                type="button"
-                onClick={() => setMode('login')}
-                className="w-full text-center text-sm text-zinc-500 transition-colors hover:text-white"
-              >
-                Back to Login
-              </button>
-            </form>
-          ) : mode === 'reset' ? (
-            <form onSubmit={handleResetPassword} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="new-password" className="text-zinc-400">
-                  New Password
-                </Label>
-
-                <div className="relative">
-                  <Input
-                    id="new-password"
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="h-12 rounded-xl border-zinc-800 bg-zinc-900 pr-12 text-white focus-visible:ring-orange-500"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors hover:text-zinc-300"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-5 w-5" />
-                    ) : (
-                      <Eye className="h-5 w-5" />
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {error && (
-                <p className="text-center text-xs text-red-500">{error}</p>
-              )}
-
-              <Button
-                type="submit"
-                disabled={loading || password.length < 6}
-                className="h-12 w-full rounded-xl bg-orange-500 font-bold text-black hover:bg-orange-400"
-              >
-                {loading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  'Reset Password'
-                )}
-              </Button>
-            </form>
-          ) : (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleGoogleLogin}
-                disabled={loading || googleLoading}
-                className="h-12 w-full gap-x-3 rounded-xl border-zinc-800 bg-zinc-900/50 text-white hover:bg-zinc-800"
-              >
-                {googleLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <Chrome className="h-5 w-5" />
-                )}
-                Continue with Google
-              </Button>
-
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-zinc-800" />
-                </div>
-
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-zinc-950 px-2 text-zinc-500">
-                    Or continue with email
-                  </span>
-                </div>
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {mode === 'signup' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="name" className="text-zinc-400">
-                      Display Name
-                    </Label>
-
-                    <Input
-                      id="name"
-                      placeholder="Paul Makula/"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      required
-                      className="h-12 rounded-xl border-zinc-800 bg-zinc-900 text-white focus-visible:ring-orange-500"
-                    />
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-zinc-400">
-                    Email
-                  </Label>
-
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="m@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="h-12 rounded-xl border-zinc-800 bg-zinc-900 text-white focus-visible:ring-orange-500"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="password" className="text-zinc-400">
-                    Password
-                  </Label>
-
-                  <div className="relative">
-                    <Input
-                      id="password"
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      className="h-12 rounded-xl border-zinc-800 bg-zinc-900 pr-12 text-white focus-visible:ring-orange-500"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors hover:text-zinc-300"
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-5 w-5" />
-                      ) : (
-                        <Eye className="h-5 w-5" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {mode === 'login' && (
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setMode('forgot')}
-                      className="text-xs text-zinc-400 transition-colors hover:text-white"
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
-                )}
-
-                {error && (
-                  <p className="text-center text-xs text-red-500">{error}</p>
-                )}
-
-                <Button
-                  type="submit"
-                  disabled={loading || googleLoading}
-                  className="h-12 w-full rounded-xl bg-orange-500 font-bold text-black hover:bg-orange-400"
-                >
-                  {loading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : mode === 'login' ? (
-                    'Log In'
-                  ) : (
-                    'Sign Up'
-                  )}
-                </Button>
-              </form>
-            </>
-          )}
-        </div>
-
-        <div className="text-center text-sm">
-          <span className="text-zinc-500">
-            {mode === 'login'
-              ? "Don't have an account? "
-              : mode === 'verify'
-              ? 'Entered wrong email? '
-              : mode === 'forgot' || mode === 'reset'
-              ? 'Remembered your password? '
-              : 'Already have an account? '}
-          </span>
-
+    <>
+      {showLyrics && currentSong && (
+        <div className="fixed inset-0 bg-zinc-950/95 backdrop-blur-3xl z-[100] flex flex-col items-center justify-center p-8 lg:p-20 overflow-y-auto animate-in fade-in zoom-in duration-300">
           <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              setPassword('');
-              setVerificationCode('');
-              setResetCode('');
-              setMode(mode === 'login' ? 'signup' : 'login');
-            }}
-            className="font-bold text-orange-500 hover:underline"
+            onClick={() => setShowLyrics(false)}
+            className="absolute top-8 right-8 text-zinc-400 hover:text-white transition-colors"
+            title="Close lyrics"
           >
-            {mode === 'login' ? 'Sign Up' : 'Log In'}
+            <X className="w-8 h-8 text-orange-500" />
           </button>
+
+          <div className="max-w-3xl w-full flex flex-col lg:flex-row gap-12 items-center lg:items-start">
+            <div className="w-64 h-64 lg:w-96 lg:h-96 shrink-0 shadow-2xl rounded-2xl overflow-hidden">
+              <img
+                src={
+                  currentSong.coverUrl ||
+                  "https://picsum.photos/seed/song/200/200"
+                }
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+                alt={currentSong.title}
+              />
+            </div>
+
+            <div className="flex-1 text-center lg:text-left">
+              <h2 className="text-4xl lg:text-6xl font-black text-white mb-4">
+                {currentSong.title}
+              </h2>
+
+              <p className="text-xl lg:text-2xl text-zinc-400 mb-12">
+                {currentSong.artist}
+              </p>
+
+              <div className="space-y-6 text-2xl lg:text-4xl font-bold text-zinc-300/40">
+                {currentSong.lyrics ? (
+                  currentSong.lyrics.split("\n").map((line, i) => (
+                    <p
+                      key={i}
+                      className="hover:text-white transition-colors cursor-default"
+                    >
+                      {line}
+                    </p>
+                  ))
+                ) : (
+                  <p className="italic">Lyrics not available for this track.</p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      )}
+
+      {queueOpen && (
+        <button
+          type="button"
+          onClick={() => setQueueOpen(false)}
+          className="fixed inset-0 bg-black/20 z-[70]"
+          aria-label="Close queue"
+        />
+      )}
+
+      {queueOpen && (
+        <div className="fixed right-4 bottom-28 w-80 max-w-[calc(100vw-2rem)] bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl z-[90] overflow-hidden">
+          <div className="p-4 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-white">Queue</h3>
+              <p className="text-xs text-zinc-500">
+                {queue.length} {queue.length === 1 ? "song" : "songs"}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setQueueOpen(false)}
+              className="text-zinc-500 hover:text-white transition-colors"
+              title="Close queue"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <ScrollArea className="h-80">
+            <div className="p-2 space-y-1">
+              {queue.length === 0 ? (
+                <div className="p-6 text-center">
+                  <ListMusic className="w-10 h-10 mx-auto mb-3 text-zinc-700" />
+                  <p className="text-sm font-semibold text-zinc-300">
+                    Queue is empty
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Play or add songs to see them here.
+                  </p>
+                </div>
+              ) : (
+                queue.map((song, idx) => (
+                  <div
+                    key={`${song.id}-${idx}`}
+                    className={cn(
+                      "w-full flex items-center gap-x-3 p-2 rounded-lg transition-colors text-left group",
+                      currentSong?.id === song.id
+                        ? "bg-orange-500/10 text-orange-500"
+                        : "hover:bg-zinc-800 text-zinc-400 hover:text-white",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleQueueSongClick(song)}
+                      className="flex-1 flex items-center gap-x-3 min-w-0 text-left"
+                    >
+                      <img
+                        src={
+                          song.coverUrl ||
+                          "https://picsum.photos/seed/song/200/200"
+                        }
+                        className="w-10 h-10 rounded object-cover"
+                        referrerPolicy="no-referrer"
+                        alt={song.title}
+                      />
+
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold truncate">
+                          {song.title}
+                        </p>
+                        <p className="text-xs opacity-60 truncate">
+                          {song.artist}
+                        </p>
+                      </div>
+                    </button>
+
+                    <div className="flex items-center gap-x-2">
+                      {currentSong?.id === song.id && (
+                        <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeFromQueue(song.id);
+                        }}
+                        className="p-1.5 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all"
+                        title="Remove from queue"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+
+      <div className="fixed bottom-20 lg:bottom-8 left-0 lg:left-1/2 lg:-translate-x-1/2 w-full lg:max-w-5xl px-0 lg:px-4 z-50">
+        <div className="bg-zinc-900/95 lg:bg-zinc-900/90 backdrop-blur-xl border-t lg:border border-zinc-800/50 lg:rounded-3xl p-3 lg:p-4 flex items-center justify-between shadow-2xl shadow-black/50 overflow-hidden relative group">
+          <div className="absolute top-0 left-0 w-full h-1 lg:h-1.5 group/progress">
+            <Slider
+              value={[Number.isFinite(progress) ? progress : 0]}
+              max={Number.isFinite(duration) && duration > 0 ? duration : 100}
+              step={0.1}
+              onValueChange={handleSeek}
+              disabled={!currentSong}
+              className="w-full absolute top-0 cursor-pointer"
+            />
+          </div>
+
+          <div className="flex items-center gap-x-3 lg:gap-x-4 w-full lg:w-1/4 min-w-0">
+            <div className="relative w-12 h-12 lg:w-14 lg:h-14 shrink-0 overflow-hidden rounded-lg lg:rounded-xl shadow-lg bg-zinc-800 flex items-center justify-center">
+              {currentSong ? (
+                <img
+                  src={
+                    currentSong.coverUrl ||
+                    "https://picsum.photos/seed/song/200/200"
+                  }
+                  alt={currentSong.title}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <Music className="w-6 h-6 text-zinc-600" />
+              )}
+            </div>
+
+            <div className="flex flex-col min-w-0 flex-1">
+              <div className="lg:hidden text-xs font-bold text-orange-500 uppercase tracking-wider mb-0.5">
+                Now Playing
+              </div>
+
+              <span className="text-white font-bold truncate text-sm lg:text-base">
+                {currentSong ? currentSong.title : "None"}
+              </span>
+
+              <div className="flex items-center gap-x-2 truncate">
+                {currentSong ? (
+                  <>
+                    <Link
+                      to={`/artist/${currentSong.artist}`}
+                      className="text-zinc-400 text-xs lg:text-sm hover:text-orange-500 transition-colors truncate"
+                    >
+                      {currentSong.artist}
+                    </Link>
+
+                    {currentSong.album && (
+                      <>
+                        <span className="text-zinc-600">•</span>
+                        <Link
+                          to={`/album/${currentSong.album}`}
+                          className="text-zinc-500 text-xs lg:text-sm hover:text-zinc-300 transition-colors truncate"
+                        >
+                          {currentSong.album}
+                        </Link>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-zinc-400 text-xs lg:text-sm truncate">
+                    Select a song to play
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {currentSong && (
+              <button
+                type="button"
+                onClick={() => toggleLike(currentSong.id)}
+                className={cn(
+                  "ml-2 transition-colors",
+                  isLiked
+                    ? "text-orange-500"
+                    : "text-zinc-500 hover:text-zinc-300",
+                )}
+                title={isLiked ? "Unlike song" : "Like song"}
+              >
+                <Heart className={cn("w-5 h-5", isLiked && "fill-current")} />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-x-2 sm:gap-x-3 lg:gap-x-6 px-2 lg:px-4">
+            <button
+              type="button"
+              onClick={toggleShuffle}
+              disabled={!currentSong}
+              className={cn(
+                "hidden sm:block transition-colors",
+                isShuffled
+                  ? "text-orange-500"
+                  : "text-zinc-500 hover:text-zinc-300",
+                !currentSong && "opacity-50 cursor-not-allowed",
+              )}
+              title="Shuffle"
+            >
+              <Shuffle className="w-4 h-4 lg:w-5 lg:h-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrevious}
+              disabled={!currentSong}
+              className={cn(
+                "text-zinc-400 hover:text-white transition-colors",
+                !currentSong && "opacity-50 cursor-not-allowed",
+              )}
+              title="Previous"
+            >
+              <SkipBack className="w-5 h-5 lg:w-7 lg:h-7 fill-current" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!currentSong) return;
+                if (!requireAuthForSong(currentSong)) return;
+                setIsPlaying(!isPlaying);
+              }}
+              disabled={!currentSong}
+              className={cn(
+                "w-10 h-10 lg:w-14 lg:h-14 bg-white text-black rounded-full flex items-center justify-center hover:scale-105 transition-transform shadow-lg shrink-0",
+                !currentSong && "opacity-50 cursor-not-allowed",
+              )}
+              title={isPlaying ? "Pause" : "Play"}
+            >
+              {isPlaying && currentSong ? (
+                <Pause className="w-5 h-5 lg:w-7 lg:h-7 fill-black" />
+              ) : (
+                <Play className="w-5 h-5 lg:w-7 lg:h-7 fill-black ml-0.5 lg:ml-1" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={playNext}
+              disabled={!currentSong}
+              className={cn(
+                "text-zinc-400 hover:text-white transition-colors",
+                !currentSong && "opacity-50 cursor-not-allowed",
+              )}
+              title="Next"
+            >
+              <SkipForward className="w-5 h-5 lg:w-7 lg:h-7 fill-current" />
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleRepeat}
+              disabled={!currentSong}
+              className={cn(
+                "hidden lg:block transition-colors",
+                repeatMode !== "none"
+                  ? "text-orange-500"
+                  : "text-zinc-500 hover:text-zinc-300",
+                !currentSong && "opacity-50 cursor-not-allowed",
+              )}
+              title="Repeat"
+            >
+              {repeatMode === "one" ? (
+                <Repeat1 className="w-5 h-5" />
+              ) : (
+                <Repeat className="w-5 h-5" />
+              )}
+            </button>
+          </div>
+
+          <div className="hidden lg:flex items-center gap-x-6 w-1/4 justify-end">
+            <button
+              type="button"
+              onClick={() => setShowLyrics(true)}
+              disabled={!currentSong}
+              className={cn(
+                "transition-colors",
+                showLyrics
+                  ? "text-orange-500"
+                  : "text-zinc-500 hover:text-zinc-300",
+                !currentSong && "opacity-50 cursor-not-allowed",
+              )}
+              title="Lyrics"
+            >
+              <Mic2 className="w-5 h-5" />
+            </button>
+
+            <div className="hidden xl:flex items-center gap-x-2 text-zinc-500 text-xs font-mono">
+              <span>{formatTime(progress)}</span>
+              <span>/</span>
+              <span>{formatTime(currentSong?.duration || duration)}</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setQueueOpen((prev) => !prev)}
+              className={cn(
+                "text-zinc-400 hover:text-white transition-colors relative",
+                queueOpen && "text-orange-500",
+              )}
+              title="Open queue"
+            >
+              <ListMusic className="w-6 h-6" />
+
+              {queue.length > 0 && (
+                <span className="absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-orange-500 text-black text-[10px] font-bold flex items-center justify-center">
+                  {queue.length}
+                </span>
+              )}
+            </button>
+
+            <div className="hidden md:flex items-center gap-x-3 w-32">
+              <Volume2 className="w-5 h-5 text-zinc-400" />
+              <Slider
+                value={[safeVolume * 100]}
+                max={100}
+                step={1}
+                onValueChange={handleVolumeChange}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+
+        <audio
+          key={currentSong?.id || "none"}
+          ref={audioRef}
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onEnded={playNext}
+          onError={() => {
+            console.error("Audio element error occurred");
+
+            if (currentSong) {
+              console.warn(`Failed to load song: ${currentSong.title}`);
+            }
+
+            setIsPlaying(false);
+          }}
+        />
+      </div>
+    </>
   );
 }
-
-export default AuthModal;
