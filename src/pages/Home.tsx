@@ -5,6 +5,7 @@ import { SongCard } from "@/components/SongCard";
 import { Button } from "@/components/ui/button";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useAuthModal } from "@/store/useAuthModal";
+import { getMediaUrl } from "@/lib/apiConfig";
 import {
   Flame,
   BarChart3,
@@ -19,7 +20,6 @@ import {
   Music2,
 } from "lucide-react";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const CATEGORIES = [
   { icon: Flame, label: "Trending", path: "/" },
@@ -36,9 +36,11 @@ const getUploadUrl = (
 ) => {
   if (!image) return "";
 
-  if (image.startsWith("http")) return image;
+  if (image.startsWith("http://") || image.startsWith("https://")) {
+    return image;
+  }
 
-  if (image.startsWith("/uploads")) {
+  if (image.startsWith("/")) {
     return getMediaUrl(image);
   }
 
@@ -68,11 +70,17 @@ const getArtistImageUrl = (artist: any) => {
 
   if (!image) return "";
 
-  const filename = String(image).split("/").pop();
+  const imageString = String(image);
 
-  if (!filename) return "";
+  if (imageString.startsWith("http://") || imageString.startsWith("https://")) {
+    return imageString;
+  }
 
-  return getMediaUrl(`/uploads/general/${filename}`);
+  if (imageString.startsWith("/")) {
+    return getMediaUrl(imageString);
+  }
+
+  return getMediaUrl(`/uploads/general/${imageString}`);
 };
 
 const isLocalSong = (song: any) => {
