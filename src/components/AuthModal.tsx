@@ -15,6 +15,7 @@ import { Label } from './ui/label';
 
 import { Chrome, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useAuthModal } from '../store/useAuthModal';
+import { API_BASE_URL } from '@/lib/apiConfig';
 
 export function AuthModal() {
   const { isOpen, close, mode, setMode } = useAuthModal();
@@ -191,7 +192,7 @@ export function AuthModal() {
     setGoogleLoading(true);
     setError(null);
 
-    window.location.href = 'http://localhost:5000/api/auth/google';
+    window.location.href = `${API_BASE_URL}/auth/google`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

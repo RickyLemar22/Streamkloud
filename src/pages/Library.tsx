@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuthModal } from '@/store/useAuthModal';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { API_BASE_URL, getMediaUrl } from "@/lib/apiConfig";
 
 type StoredUser = {
   id?: string | number;

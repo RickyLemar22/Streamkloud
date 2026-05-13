@@ -4,8 +4,7 @@ import { Song } from '@/types';
 import { SongCard } from '@/components/SongCard';
 import { Search as SearchIcon, User, Disc3, Music } from 'lucide-react';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { API_BASE_URL, getMediaUrl } from "@/lib/apiConfig";
 
 const UPLOADS_BASE_URL = API_BASE_URL.replace('/api', '');
 
@@ -115,7 +114,7 @@ export function Search() {
             id: song._id || song.id,
             ...song,
             audioUrl: song.url || song.audioUrl || song.file_url || song.fileUrl,
-            coverUrl: getCoverUrl(song),
+            coverUrl: getMediaUrl(getCoverUrl(song)),
           }))
         );
 
@@ -123,7 +122,7 @@ export function Search() {
           artistsData.map((artist: any) => ({
             id: artist._id || artist.id,
             ...artist,
-            imageUrl: getArtistImageUrl(artist),
+            imageUrl: getMediaUrl(getArtistImageUrl(artist)),
           }))
         );
 
@@ -131,7 +130,7 @@ export function Search() {
           albumsData.map((album: any) => ({
             id: album._id || album.id,
             ...album,
-            coverUrl: getCoverUrl(album),
+            coverUrl: getMediaUrl(getCoverUrl(album)),
           }))
         );
       } catch (error) {
@@ -233,7 +232,7 @@ export function Search() {
                     <div className="aspect-square rounded-full overflow-hidden bg-zinc-800 border-4 border-zinc-900 mb-3 flex items-center justify-center">
                       {artist.imageUrl ? (
                         <img
-                          src={artist.imageUrl}
+                          src={getMediaUrl(artist.imageUrl)}
                           alt={artist.name}
                           className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                           referrerPolicy="no-referrer"
@@ -273,7 +272,7 @@ export function Search() {
                     <div className="aspect-square rounded-2xl overflow-hidden bg-zinc-800 mb-3 flex items-center justify-center">
                       {album.coverUrl ? (
                         <img
-                          src={album.coverUrl}
+                          src={getMediaUrl(album.coverUrl)}
                           alt={album.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                           referrerPolicy="no-referrer"

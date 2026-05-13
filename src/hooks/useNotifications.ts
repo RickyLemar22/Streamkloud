@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { API_BASE_URL } from '@/lib/apiConfig';
 
 export interface Notification {
   id: string;
@@ -12,8 +13,6 @@ export interface Notification {
   createdAt?: any;
   created_at?: string;
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const getToken = () => {
   const userInfo = localStorage.getItem('userInfo');
@@ -66,7 +65,9 @@ export function useNotifications() {
       });
 
       setNotifications(filtered);
-      setUnreadCount(filtered.filter((n: Notification) => !(n.isRead ?? n.is_read)).length);
+      setUnreadCount(
+        filtered.filter((n: Notification) => !(n.isRead ?? n.is_read)).length
+      );
     } catch (error) {
       console.error('Fetch notifications error:', error);
       setNotifications([]);

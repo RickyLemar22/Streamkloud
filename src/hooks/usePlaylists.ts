@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { API_BASE_URL } from '@/lib/apiConfig';
 
 export interface Playlist {
   id: string;
@@ -8,8 +9,6 @@ export interface Playlist {
   isPublic: boolean;
   created_at?: string;
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const getToken = () => {
   const userInfo = localStorage.getItem('userInfo');
@@ -62,7 +61,10 @@ export function usePlaylists() {
     fetchPlaylists();
   }, []);
 
-  const createPlaylist = async (name: string, isPublic: boolean = false) => {
+  const createPlaylist = async (
+    name: string,
+    isPublic: boolean = false
+  ) => {
     const token = getToken();
     if (!token) return;
 
@@ -78,7 +80,10 @@ export function usePlaylists() {
     await fetchPlaylists();
   };
 
-  const addSongToPlaylist = async (playlistId: string, songId: string) => {
+  const addSongToPlaylist = async (
+    playlistId: string,
+    songId: string
+  ) => {
     const token = getToken();
     if (!token) return;
 
@@ -94,7 +99,10 @@ export function usePlaylists() {
     await fetchPlaylists();
   };
 
-  const removeSongFromPlaylist = async (playlistId: string, songId: string) => {
+  const removeSongFromPlaylist = async (
+    playlistId: string,
+    songId: string
+  ) => {
     const token = getToken();
     if (!token) return;
 

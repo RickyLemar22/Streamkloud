@@ -3,24 +3,24 @@ import { useParams } from 'react-router-dom';
 import { Song } from '@/types';
 import { SongCard } from '@/components/SongCard';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { API_BASE_URL, getMediaUrl } from "@/lib/apiConfig";
 
-export function Genre() {
+export function Album() {
   const { name } = useParams();
   const [songs, setSongs] = useState<Song[]>([]);
 
   useEffect(() => {
-    const fetchGenreSongs = async () => {
+    const fetchAlbumSongs = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/songs?genre=${name}`);
+        const res = await fetch(`${API_BASE_URL}/songs?album=${name}`);
         const data = await res.json();
         setSongs(data);
       } catch (error) {
-        console.error('Error fetching genre songs:', error);
+        console.error('Error fetching album songs:', error);
       }
     };
 
-    if (name) fetchGenreSongs();
+    if (name) fetchAlbumSongs();
   }, [name]);
 
   return (

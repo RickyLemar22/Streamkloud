@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuthModal } from '@/store/useAuthModal';
 
+import { API_BASE_URL } from "@/lib/apiConfig";
 type StoredUser = {
   id?: string | number;
   _id?: string | number;
@@ -12,7 +13,6 @@ type StoredUser = {
   subscription?: any;
 };
 
-const API_BASE_URL = 'http://localhost:5000';
 
 const getStoredUser = (): StoredUser | null => {
   try {
@@ -144,7 +144,7 @@ export function Subscription() {
     setLoading(planId);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/payments/checkout`, {
+      const response = await fetch(`${API_BASE_URL}/payments/checkout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

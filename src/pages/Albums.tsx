@@ -3,7 +3,7 @@ import { Album } from '@/types';
 import { Disc } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { API_BASE_URL, getMediaUrl } from "@/lib/apiConfig";
 
 export function Albums() {
   const [albums, setAlbums] = useState<Album[]>([]);
@@ -24,7 +24,7 @@ export function Albums() {
           id: album.id || album._id,
           title: album.title,
           artist: album.artist || album.artist_name || 'Unknown Artist',
-          coverUrl: album.coverUrl || album.cover_url || album.coverImage || album.cover_image,
+          coverUrl: getMediaUrl(album.coverUrl || album.cover_url || album.coverImage || album.cover_image),
           createdAt: album.createdAt || album.created_at,
         }));
 

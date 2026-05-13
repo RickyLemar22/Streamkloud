@@ -4,8 +4,7 @@ import { Song } from '@/types';
 import { SongCard } from '@/components/SongCard';
 import { Music, User, Disc3 } from 'lucide-react';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { API_BASE_URL, getMediaUrl } from "@/lib/apiConfig";
 
 const UPLOADS_BASE_URL = API_BASE_URL.replace('/api', '');
 
@@ -142,7 +141,7 @@ export function Artist() {
           ? {
               id: foundArtist._id || foundArtist.id,
               ...foundArtist,
-              imageUrl: getArtistImageUrl(foundArtist),
+              imageUrl: getMediaUrl(getArtistImageUrl(foundArtist)),
             }
           : null;
 
@@ -155,7 +154,7 @@ export function Artist() {
             id: song._id || song.id,
             ...song,
             audioUrl: song.url || song.audioUrl || song.file_url || song.fileUrl,
-            coverUrl: getCoverUrl(song, finalArtist),
+            coverUrl: getMediaUrl(getCoverUrl(song), finalArtist),
           }))
         );
 
@@ -172,7 +171,7 @@ export function Artist() {
             .map((album: any) => ({
               id: album._id || album.id,
               ...album,
-              coverUrl: getCoverUrl(album, finalArtist),
+              coverUrl: getMediaUrl(getCoverUrl(album), finalArtist),
             }))
         );
       } catch (error) {
@@ -247,7 +246,7 @@ export function Artist() {
                 <div className="aspect-square rounded-2xl overflow-hidden bg-zinc-800 mb-3 flex items-center justify-center">
                   {album.coverUrl ? (
                     <img
-                      src={album.coverUrl}
+                      src={getMediaUrl(album.coverUrl)}
                       alt={album.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                       referrerPolicy="no-referrer"

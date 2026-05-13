@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { usePlaylists } from '@/hooks/usePlaylists';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { API_BASE_URL, getMediaUrl } from "@/lib/apiConfig";
 
 export function Playlist() {
   const { id } = useParams();
@@ -68,7 +68,7 @@ export function Playlist() {
           id: String(s.id || s._id),
           ...s,
           audioUrl: s.audioUrl || s.audio_url || s.url || s.file_url,
-          coverUrl: s.coverUrl || s.cover_url || s.coverImage || s.cover_image,
+          coverUrl: getMediaUrl(s.coverUrl || s.cover_url || s.coverImage || s.cover_image),
         }));
 
         const sortedSongs = playlist.songIds
