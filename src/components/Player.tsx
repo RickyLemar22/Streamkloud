@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { ScrollArea } from "./ui/scroll-area";
 import { useAuthModal } from "@/store/useAuthModal";
-import { API_BASE_URL, BACKEND_BASE_URL } from "@/lib/apiConfig";
+import { API_BASE_URL as CONFIGURED_API_BASE_URL, BACKEND_BASE_URL } from "@/lib/apiConfig";
 
 export function Player() {
   const {
@@ -54,9 +54,14 @@ export function Player() {
 
   const { open } = useAuthModal();
 
-  const API_BASE_URL =
+  const API_BASE =
     import.meta.env.VITE_API_URL ||
+    CONFIGURED_API_BASE_URL ||
     BACKEND_BASE_URL;
+
+  const BACKEND_BASE = BACKEND_BASE_URL || API_BASE.replace(/\/api\/?$/, "");
+
+  const stripTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 
   const getToken = () => localStorage.getItem("token") || "";
 
@@ -64,7 +69,11 @@ export function Player() {
     return Boolean(song?.id?.toString().startsWith("local-"));
   };
 
-  const toAbsoluteUrl = (url?: string) => {
+  const isValidSong = (song?: any) => {
+    return Boolean(song && song.id !== undefined && song.id !== null);
+  };
+
+  const toBackendUrl = (url?: string) => {
     if (!url) return "";
 
     if (
@@ -75,23 +84,51 @@ export function Player() {
       return url;
     }
 
-    return `${API_BASE_URL}${url.startsWith("/") ? url : `/${url}`}`;
+    return `${stripTrailingSlash(BACKEND_BASE)}${url.startsWith("/") ? url : `/${url}`}`;
+  };
+
+  const toApiUrl = (path?: string) => {
+    if (!path) return "";
+
+    if (
+      path.startsWith("http://") ||
+      path.startsWith("https://") ||
+      path.startsWith("blob:")
+    ) {
+      return path;
+    }
+
+    const cleanApiBase = stripTrailingSlash(API_BASE);
+    const cleanPath = path.startsWith("/") ? path : `/${path}`;
+
+    // Prevent bad production URLs like /api/api/songs/...
+    if (cleanApiBase.endsWith("/api") && cleanPath.startsWith("/api/")) {
+      return `${cleanApiBase}${cleanPath.replace(/^\/api/, "")}`;
+    }
+
+    return `${cleanApiBase}${cleanPath}`;
   };
 
   const getPlaybackUrl = (song: any) => {
-    if (!song) return "";
+    if (!isValidSong(song)) return "";
 
     if (isLocalSong(song)) {
-      return toAbsoluteUrl(song.audioUrl || song.url || song.file_url);
+      return toBackendUrl(song.audioUrl || song.url || song.file_url);
     }
 
-    const rawUrl =
-      song.audioUrl ||
-      song.url ||
-      song.file_url ||
-      `/api/songs/stream/${song.id}/master.m3u8`;
+    const directUrl = song.audioUrl || song.url || song.file_url;
 
-    const absoluteUrl = toAbsoluteUrl(rawUrl);
+    // If the database already has a real file path such as /uploads/songs/file.mp3,
+    // use the backend host directly. Do not prefix it with /api.
+    if (directUrl && !directUrl.includes(".m3u8")) {
+      return toBackendUrl(directUrl);
+    }
+
+    const rawUrl = directUrl || `/api/songs/stream/${song.id}/master.m3u8`;
+
+    const absoluteUrl = rawUrl.includes(".m3u8")
+      ? toApiUrl(rawUrl)
+      : toBackendUrl(rawUrl);
 
     if (!absoluteUrl.includes(".m3u8")) {
       return absoluteUrl;
@@ -121,12 +158,11 @@ export function Player() {
 
     setProgress(0);
     setDuration(0);
-    setCurrentSong(null);
     setQueueOpen(false);
   };
 
   const requireAuthForSong = (song?: any) => {
-    if (!song) return false;
+    if (!isValidSong(song)) return false;
 
     if (isLocalSong(song)) return true;
 
@@ -194,8 +230,8 @@ export function Player() {
 
     const updatedRecent = [
       currentSong,
-      ...recentlyPlayed.filter((s: any) => s.id !== currentSong.id),
-    ].slice(0, 10);
+      ...recentlyPlayed.filter((s: any) => s?.id !== currentSong.id),
+    ].filter(isValidSong).slice(0, 10);
 
     localStorage.setItem("recentlyPlayed", JSON.stringify(updatedRecent));
     window.dispatchEvent(new Event("recentlyPlayedUpdated"));
@@ -344,11 +380,14 @@ export function Player() {
   };
 
   const handleQueueSongClick = (song: any) => {
+    if (!isValidSong(song)) return;
     if (!requireAuthForSong(song)) return;
     setCurrentSong(song);
     setIsPlaying(true);
     setQueueOpen(false);
   };
+
+  const safeQueue = Array.isArray(queue) ? queue.filter(isValidSong) : [];
 
   return (
     <>
@@ -418,7 +457,7 @@ export function Player() {
             <div>
               <h3 className="font-bold text-white">Queue</h3>
               <p className="text-xs text-zinc-500">
-                {queue.length} {queue.length === 1 ? "song" : "songs"}
+                {safeQueue.length} {safeQueue.length === 1 ? "song" : "songs"}
               </p>
             </div>
 
@@ -434,7 +473,7 @@ export function Player() {
 
           <ScrollArea className="h-80">
             <div className="p-2 space-y-1">
-              {queue.length === 0 ? (
+              {safeQueue.length === 0 ? (
                 <div className="p-6 text-center">
                   <ListMusic className="w-10 h-10 mx-auto mb-3 text-zinc-700" />
                   <p className="text-sm font-semibold text-zinc-300">
@@ -445,7 +484,7 @@ export function Player() {
                   </p>
                 </div>
               ) : (
-                queue.map((song, idx) => (
+                safeQueue.map((song, idx) => (
                   <div
                     key={`${song.id}-${idx}`}
                     className={cn(
@@ -505,7 +544,7 @@ export function Player() {
         </div>
       )}
 
-      <div className="fixed bottom-20 lg:bottom-8 left-0 lg:left-1/2 lg:-translate-x-1/2 w-full lg:max-w-5xl px-0 lg:px-4 z-50">
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-black/95 border-t border-zinc-800 px-4 py-3">
         <div className="bg-zinc-900/95 lg:bg-zinc-900/90 backdrop-blur-xl border-t lg:border border-zinc-800/50 lg:rounded-3xl p-3 lg:p-4 flex items-center justify-between shadow-2xl shadow-black/50 overflow-hidden relative group">
           <div className="absolute top-0 left-0 w-full h-1 lg:h-1.5 group/progress">
             <Slider
@@ -710,9 +749,9 @@ export function Player() {
             >
               <ListMusic className="w-6 h-6" />
 
-              {queue.length > 0 && (
+              {safeQueue.length > 0 && (
                 <span className="absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-orange-500 text-black text-[10px] font-bold flex items-center justify-center">
-                  {queue.length}
+                  {safeQueue.length}
                 </span>
               )}
             </button>
