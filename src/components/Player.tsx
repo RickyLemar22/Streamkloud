@@ -600,7 +600,7 @@ export function Player() {
         </div>
       )}
 
-      <div className="fixed bottom-20 lg:bottom-8 left-0 lg:left-1/2 lg:-translate-x-1/2 w-full lg:max-w-5xl px-0 lg:px-4 z-50">
+      <div className="fixed bottom-0 md:bottom-4 lg:bottom-5 xl:bottom-6 left-0 md:left-4 lg:left-[14rem] xl:left-[15rem] 2xl:left-[16rem] right-0 md:right-4 lg:right-6 xl:right-8 z-50 w-auto px-0">
         <div className="bg-zinc-900/95 lg:bg-zinc-900/90 backdrop-blur-xl border-t lg:border border-zinc-800/50 lg:rounded-3xl p-3 lg:p-4 flex items-center justify-between shadow-2xl shadow-black/50 overflow-hidden relative group">
           <div className="absolute top-0 left-0 w-full h-1 lg:h-1.5 group/progress">
             <Slider
