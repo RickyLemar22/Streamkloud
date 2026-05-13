@@ -34,7 +34,6 @@ export const SongCard: React.FC<SongCardProps> = ({ song }) => {
   } = usePlayerStore();
 
   const { playlists, addSongToPlaylist, createPlaylist } = usePlaylists();
-
   const navigate = useNavigate();
 
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
@@ -171,21 +170,18 @@ export const SongCard: React.FC<SongCardProps> = ({ song }) => {
             onClick={stopCardClick}
           >
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="p-2 rounded-full bg-black/40 backdrop-blur-md text-white/70 hover:text-white transition-colors focus:outline-none"
-                  onClick={(e) => {
-                    e.stopPropagation();
+              <DropdownMenuTrigger
+                className="p-2 rounded-full bg-black/40 backdrop-blur-md text-white/70 hover:text-white transition-colors focus:outline-none"
+                onClick={(e) => {
+                  e.stopPropagation();
 
-                    if (!requireAuth()) {
-                      e.preventDefault();
-                    }
-                  }}
-                  title="Add to playlist"
-                >
-                  <ListPlus className="w-5 h-5" />
-                </button>
+                  if (!requireAuth()) {
+                    e.preventDefault();
+                  }
+                }}
+                title="Add to playlist"
+              >
+                <ListPlus className="w-5 h-5" />
               </DropdownMenuTrigger>
 
               <DropdownMenuContent
@@ -237,9 +233,7 @@ export const SongCard: React.FC<SongCardProps> = ({ song }) => {
               )}
               title={isLiked ? 'Unlike song' : 'Like song'}
             >
-              <Heart
-                className={cn('w-5 h-5', isLiked && 'fill-current')}
-              />
+              <Heart className={cn('w-5 h-5', isLiked && 'fill-current')} />
             </button>
           </div>
 
