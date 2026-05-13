@@ -374,7 +374,7 @@ export function AuthModal() {
 
           <DialogDescription className="text-center text-zinc-500">
             {mode === 'login'
-              ? 'Log in to access your library, playlists, or admin dashboard'
+              ? 'Log in to access your library, playlists'
               : mode === 'verify'
               ? `We sent a 6-digit code to ${email}`
               : mode === 'forgot'
