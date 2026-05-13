@@ -562,7 +562,7 @@ export function AuthModal() {
 
                     <Input
                       id="name"
-                      placeholder="Paul Makula/"
+                      placeholder="Paul Makula"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                       required
