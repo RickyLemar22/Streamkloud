@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { ScrollArea } from "./ui/scroll-area";
 import { useAuthModal } from "@/store/useAuthModal";
-import { BACKEND_BASE_URL } from "@/lib/apiConfig";
+import { API_BASE_URL, BACKEND_BASE_URL } from "@/lib/apiConfig";
 
 export function Player() {
   const {
