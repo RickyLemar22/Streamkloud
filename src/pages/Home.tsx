@@ -5,7 +5,6 @@ import { SongCard } from "@/components/SongCard";
 import { Button } from "@/components/ui/button";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useAuthModal } from "@/store/useAuthModal";
-import { API_BASE_URL, getMediaUrl } from "@/lib/apiConfig";
 import {
   Flame,
   BarChart3,
@@ -20,6 +19,7 @@ import {
   Music2,
 } from "lucide-react";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const CATEGORIES = [
   { icon: Flame, label: "Trending", path: "/" },
@@ -39,10 +39,10 @@ const getUploadUrl = (
   if (image.startsWith("http")) return image;
 
   if (image.startsWith("/uploads")) {
-    return `${API_URL}${image}`;
+    return getMediaUrl(image);
   }
 
-  return `${API_URL}/uploads/${folder}/${image}`;
+  return getMediaUrl(`/uploads/${folder}/${image}`);
 };
 
 const getSongCoverUrl = (song: any) => {
@@ -72,7 +72,7 @@ const getArtistImageUrl = (artist: any) => {
 
   if (!filename) return "";
 
-  return `${API_URL}/uploads/general/${filename}`;
+  return getMediaUrl(`/uploads/general/${filename}`);
 };
 
 const isLocalSong = (song: any) => {
@@ -402,7 +402,7 @@ export function Home() {
                 <div className="relative aspect-square mb-3 lg:mb-4 overflow-hidden rounded-full shadow-2xl border-4 border-zinc-900/50 group-hover:border-orange-500/50 transition-all">
                   {artist.imageUrl ? (
                     <img
-                      src={getMediaUrl(artist.imageUrl)}
+                      src={artist.imageUrl}
                       alt={artist.name}
                       className="w-full h-full object-cover transition duration-500 group-hover:scale-110"
                       referrerPolicy="no-referrer"
