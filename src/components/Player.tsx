@@ -98,10 +98,11 @@ export function Player() {
 
     try {
       const parsedUrl = new URL(url);
+      const backendBase = stripTrailingSlash(BACKEND_BASE);
 
-      // Production is HTTPS, so use the current StreamKloud domain proxy
-      // instead of the insecure Lightsail IP/host that the browser blocks.
-      return `${window.location.origin}${parsedUrl.pathname}${parsedUrl.search}`;
+      // Production is HTTPS, so never use old http://localhost or IP media URLs.
+      // Send those requests through the API/backend domain instead of CloudFront.
+      return `${backendBase}${parsedUrl.pathname}${parsedUrl.search}`;
     } catch {
       return url.replace(/^http:\/\//, "https://");
     }
@@ -160,7 +161,7 @@ export function Player() {
       (url) => typeof url === "string" && url.trim() && url.includes(".m3u8"),
     );
 
-    const rawUrl = hlsUrl || `/api/songs/stream/${song.id}/master.m3u8`;
+    const rawUrl = hlsUrl || `songs/stream/${song.id}/master.m3u8`;
     const absoluteUrl = toApiUrl(rawUrl);
 
     const token = getToken();
@@ -324,10 +325,16 @@ export function Player() {
     if (isHlsStream && Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
-        lowLatencyMode: false,
+        lowLatencyMode: true,
+        startFragPrefetch: true,
+        maxBufferLength: 10,
+        maxMaxBufferLength: 30,
+        backBufferLength: 30,
         maxBufferHole: 1.5,
         nudgeOffset: 0.2,
         nudgeMaxRetry: 5,
+        manifestLoadingTimeOut: 8000,
+        fragLoadingTimeOut: 12000,
         xhrSetup: (xhr) => {
           const token = getToken();
 
@@ -371,13 +378,15 @@ export function Player() {
     ) {
       audio.src = playbackUrl;
       audio.load();
-      audio.addEventListener("canplay", playWhenReady, { once: true });
       audio.addEventListener("loadedmetadata", playWhenReady, { once: true });
+      audio.addEventListener("loadeddata", playWhenReady, { once: true });
+      audio.addEventListener("canplay", playWhenReady, { once: true });
     } else {
       audio.src = playbackUrl;
       audio.load();
-      audio.addEventListener("canplay", playWhenReady, { once: true });
       audio.addEventListener("loadedmetadata", playWhenReady, { once: true });
+      audio.addEventListener("loadeddata", playWhenReady, { once: true });
+      audio.addEventListener("canplay", playWhenReady, { once: true });
     }
 
     return () => {

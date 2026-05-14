@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
+import { API_BASE_URL } from '@/lib/apiConfig';
 
 type SecureAudioPlayerProps = {
   songId: number;
@@ -27,7 +28,7 @@ export default function SecureAudioPlayer({
       return;
     }
 
-    const streamUrl = `/api/songs/stream/${songId}/master.m3u8`;
+    const streamUrl = `${API_BASE_URL}/songs/stream/${songId}/master.m3u8`;
 
     if (hlsRef.current) {
       hlsRef.current.destroy();
@@ -36,6 +37,14 @@ export default function SecureAudioPlayer({
 
     if (Hls.isSupported()) {
       const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        startFragPrefetch: true,
+        maxBufferLength: 10,
+        maxMaxBufferLength: 30,
+        backBufferLength: 30,
+        manifestLoadingTimeOut: 8000,
+        fragLoadingTimeOut: 12000,
         xhrSetup: (xhr) => {
           xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         },
@@ -58,7 +67,8 @@ export default function SecureAudioPlayer({
       hls.loadSource(streamUrl);
       hls.attachMedia(audio);
     } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
-      audio.src = streamUrl;
+      const separator = streamUrl.includes('?') ? '&' : '?';
+      audio.src = `${streamUrl}${separator}token=${encodeURIComponent(token)}`;
     } else {
       setError('Your browser does not support secure HLS playback.');
     }
