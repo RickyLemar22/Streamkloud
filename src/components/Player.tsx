@@ -57,7 +57,11 @@ export function Player() {
   const [showLyrics, setShowLyrics] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
 
-  const { open } = useAuthModal();
+  const authModal = useAuthModal() as ReturnType<typeof useAuthModal> & {
+    isOpen?: boolean;
+  };
+  const { open } = authModal;
+  const isAuthModalOpen = Boolean(authModal.isOpen);
 
   const configuredApiBase =
     import.meta.env.VITE_API_URL || CONFIGURED_API_BASE_URL || BACKEND_BASE_URL;
@@ -635,7 +639,12 @@ export function Player() {
         </div>
       )}
 
-      <div className="fixed left-0 right-0 bottom-24 z-[9999] w-full px-0 pb-0 md:left-0 md:right-0 md:bottom-24 md:px-0 lg:left-[20rem] lg:right-6 lg:bottom-5 lg:w-auto lg:px-0 lg:pb-0 xl:right-8 xl:bottom-6">
+      <div
+        className={cn(
+          "fixed left-0 right-0 bottom-24 z-[70] w-full px-0 pb-0 md:left-0 md:right-0 md:bottom-24 md:px-0 lg:left-[20rem] lg:right-6 lg:bottom-5 lg:z-[70] lg:w-auto lg:px-0 lg:pb-0 xl:right-8 xl:bottom-6",
+          isAuthModalOpen && "max-lg:hidden",
+        )}
+      >
         <div className="bg-zinc-900/98 lg:bg-zinc-900/90 backdrop-blur-xl border-x-0 border-t border-b-0 lg:border lg:border-zinc-700/80 border-zinc-700/80 rounded-none lg:rounded-3xl h-[88px] md:h-[78px] lg:h-auto px-4 py-3 md:px-5 md:py-2 lg:p-4 flex flex-row items-center justify-between gap-x-3 md:gap-x-4 lg:gap-x-3 shadow-2xl shadow-black/50 overflow-hidden relative group">
           <div className="absolute top-0 left-0 w-full h-1.5 md:h-1.5 lg:h-2 bg-zinc-500/90 group/progress">
             <div
