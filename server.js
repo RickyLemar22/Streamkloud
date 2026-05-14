@@ -51,9 +51,25 @@ app.use((req, res, next) => {
   next();
 });
 
+const allowedOrigins = [
+  'https://streamkloud.me',
+  'https://www.streamkloud.me',
+  'http://localhost:5173',
+];
+
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
     credentials: true,
   })
 );
