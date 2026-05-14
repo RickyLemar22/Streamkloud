@@ -138,27 +138,26 @@ export function Player() {
   const getPlaybackUrl = (song: any) => {
     if (!isValidSong(song)) return "";
 
+    const directAudioUrl = [song.file_url, song.audioUrl, song.url].find(
+      (url) => typeof url === "string" && url.trim() && !url.includes(".m3u8"),
+    );
+
+    // Fast path: use the real MP3/audio file first when it exists.
+    // This avoids waiting on HLS manifests/segments when HLS packaging is slow or incomplete.
+    if (directAudioUrl) {
+      return toBackendUrl(directAudioUrl);
+    }
+
     if (isLocalSong(song)) {
       return toBackendUrl(song.audioUrl || song.url || song.file_url);
     }
 
-    const directUrl = song.audioUrl || song.url || song.file_url;
+    const hlsUrl = [song.hls_url, song.hlsPath, song.hls_path, song.audioUrl, song.url].find(
+      (url) => typeof url === "string" && url.trim() && url.includes(".m3u8"),
+    );
 
-    // If the database already has a real file path such as /uploads/songs/file.mp3,
-    // use the backend host directly. Do not prefix it with /api.
-    if (directUrl && !directUrl.includes(".m3u8")) {
-      return toBackendUrl(directUrl);
-    }
-
-    const rawUrl = directUrl || `/api/songs/stream/${song.id}/master.m3u8`;
-
-    const absoluteUrl = rawUrl.includes(".m3u8")
-      ? toApiUrl(rawUrl)
-      : toBackendUrl(rawUrl);
-
-    if (!absoluteUrl.includes(".m3u8")) {
-      return absoluteUrl;
-    }
+    const rawUrl = hlsUrl || `/api/songs/stream/${song.id}/master.m3u8`;
+    const absoluteUrl = toApiUrl(rawUrl);
 
     const token = getToken();
     const separator = absoluteUrl.includes("?") ? "&" : "?";
@@ -340,7 +339,6 @@ export function Player() {
 
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal) {
-          console.warn("HLS playback warning:", data);
           return;
         }
 
