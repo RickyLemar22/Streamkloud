@@ -3,6 +3,30 @@ import fs from 'fs';
 import path from 'path';
 import createEncryptedHls from '../utils/createEncryptedHls.js';
 
+const BASE_URL = process.env.BASE_URL || 'https://api.streamkloud.me';
+
+const toFullMediaUrl = (url) => {
+  if (!url) return '';
+
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+
+  return `${BASE_URL}${url.startsWith('/') ? url : `/${url}`}`;
+};
+
+const normalizeSong = (song) => ({
+  ...song,
+  file_url: toFullMediaUrl(song.file_url),
+  url: toFullMediaUrl(song.url),
+  cover_url: toFullMediaUrl(song.cover_url),
+  coverUrl: toFullMediaUrl(song.coverUrl),
+  coverImage: toFullMediaUrl(song.coverImage),
+  cover_image: toFullMediaUrl(song.cover_image),
+  artistImage: toFullMediaUrl(song.artistImage),
+  artist_image: toFullMediaUrl(song.artist_image),
+});
+
 // @desc    Upload song and cover image locally, encrypt audio into HLS, then save metadata to MySQL
 // @route   POST /api/songs/upload-song
 // @access  Private/Admin
@@ -46,7 +70,7 @@ const uploadSong = async (req, res) => {
   const inputFilePath = audioFile.path;
 
   const coverUrl = coverFile
-    ? `/uploads/covers/song_covers/${coverFile.filename}`
+    ? coverFile.location || `/uploads/covers/song_covers/${coverFile.filename}`
     : null;
 
   const finalYearOfRelease =
@@ -87,7 +111,6 @@ const uploadSong = async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    // 1. Find or create artist
     let artistId;
 
     const [existingArtists] = await connection.query(
@@ -109,7 +132,6 @@ const uploadSong = async (req, res) => {
       artistId = artistResult.insertId;
     }
 
-    // 2. Find or create album if provided
     let albumId = null;
 
     if (album && album.trim() !== '') {
@@ -138,7 +160,6 @@ const uploadSong = async (req, res) => {
       }
     }
 
-    // 3. Temporarily insert with placeholder stream URL
     const [songResult] = await connection.query(
       `
       INSERT INTO songs 
@@ -191,13 +212,13 @@ const uploadSong = async (req, res) => {
       artist: artist.trim(),
       album: album || '',
       genre: genre || 'Unknown',
-      url: streamUrl,
-      file_url: streamUrl,
+      url: toFullMediaUrl(streamUrl),
+      file_url: toFullMediaUrl(streamUrl),
       hls_path: hlsResult.hlsPath,
-      coverUrl,
-      cover_url: coverUrl,
-      coverImage: coverUrl,
-      cover_image: coverUrl,
+      coverUrl: toFullMediaUrl(coverUrl),
+      cover_url: toFullMediaUrl(coverUrl),
+      coverImage: toFullMediaUrl(coverUrl),
+      cover_image: toFullMediaUrl(coverUrl),
       duration: duration ? Math.round(Number(duration)) : 0,
       year_of_release: finalYearOfRelease,
       release_year: finalYearOfRelease,
@@ -285,7 +306,7 @@ const getSongs = async (req, res) => {
 
   const [songs] = await mysqlPool.query(sql, params);
 
-  res.json(songs);
+  res.json(songs.map(normalizeSong));
 };
 
 // @desc    Get song by ID
@@ -328,7 +349,7 @@ const getSongById = async (req, res) => {
     });
   }
 
-  res.json(songs[0]);
+  res.json(normalizeSong(songs[0]));
 };
 
 // @desc    Create a song manually
@@ -391,12 +412,12 @@ const createSong = async (req, res) => {
     artist_id,
     album_id,
     genre,
-    file_url,
-    url: file_url,
-    cover_url: finalCoverUrl,
-    coverUrl: finalCoverUrl,
-    coverImage: finalCoverUrl,
-    cover_image: finalCoverUrl,
+    file_url: toFullMediaUrl(file_url),
+    url: toFullMediaUrl(file_url),
+    cover_url: toFullMediaUrl(finalCoverUrl),
+    coverUrl: toFullMediaUrl(finalCoverUrl),
+    coverImage: toFullMediaUrl(finalCoverUrl),
+    cover_image: toFullMediaUrl(finalCoverUrl),
     duration,
     year_of_release: finalYearOfRelease,
   });
@@ -477,7 +498,7 @@ const updateSong = async (req, res) => {
     let finalFileUrl = file_url || existingSong.file_url;
     let finalCoverUrl =
       coverFile
-        ? `/uploads/covers/song_covers/${coverFile.filename}`
+        ? coverFile.location || `/uploads/covers/song_covers/${coverFile.filename}`
         : cover_url || coverUrl || existingSong.cover_url;
 
     let finalYearOfRelease =
@@ -586,7 +607,7 @@ const updateSong = async (req, res) => {
       [req.params.id]
     );
 
-    res.json(updatedSongs[0]);
+    res.json(normalizeSong(updatedSongs[0]));
   } catch (error) {
     console.error('Update song error:', error);
 
@@ -628,7 +649,7 @@ const getMySongs = async (req, res) => {
     ORDER BY songs.created_at DESC
   `);
 
-  res.json(songs);
+  res.json(songs.map(normalizeSong));
 };
 
 export {
