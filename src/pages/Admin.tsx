@@ -538,12 +538,12 @@ const Admin = () => {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <div className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2">
-            <TabsList className="grid min-w-[700px] grid-cols-5 bg-zinc-900">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="songs">Songs</TabsTrigger>
-              <TabsTrigger value="artists">Artists</TabsTrigger>
-              <TabsTrigger value="albums">Albums</TabsTrigger>
-              <TabsTrigger value="users">Users</TabsTrigger>
+            <TabsList className="w-full grid grid-cols-5 gap-2 rounded-2xl border border-white/10 bg-zinc-900/80 p-2 h-auto">
+              <TabsTrigger value="overview" className="w-full rounded-xl py-3 text-sm sm:text-base font-semibold data-[state=active]:bg-orange-500 data-[state=active]:text-black text-zinc-400">Overview</TabsTrigger>
+              <TabsTrigger value="songs" className="w-full rounded-xl py-3 text-sm sm:text-base font-semibold data-[state=active]:bg-orange-500 data-[state=active]:text-black text-zinc-400">Songs</TabsTrigger>
+              <TabsTrigger value="artists" className="w-full rounded-xl py-3 text-sm sm:text-base font-semibold data-[state=active]:bg-orange-500 data-[state=active]:text-black text-zinc-400">Artists</TabsTrigger>
+              <TabsTrigger value="albums" className="w-full rounded-xl py-3 text-sm sm:text-base font-semibold data-[state=active]:bg-orange-500 data-[state=active]:text-black text-zinc-400">Albums</TabsTrigger>
+              <TabsTrigger value="users" className="w-full rounded-xl py-3 text-sm sm:text-base font-semibold data-[state=active]:bg-orange-500 data-[state=active]:text-black text-zinc-400">Users</TabsTrigger>
             </TabsList>
           </div>
 
