@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { API_BASE_URL } from '../lib/apiConfig';
 
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -187,7 +188,7 @@ const Admin = () => {
   };
 
   const fetchSongs = async () => {
-    const response = await fetch('/api/songs');
+    const response = await fetch(`${API_BASE_URL}/songs`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -205,7 +206,7 @@ const Admin = () => {
   };
 
   const fetchArtists = async () => {
-    const response = await fetch('/api/artists');
+    const response = await fetch(`${API_BASE_URL}/artists`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -222,7 +223,7 @@ const Admin = () => {
   };
 
   const fetchAlbums = async () => {
-    const response = await fetch('/api/albums');
+    const response = await fetch(`${API_BASE_URL}/albums`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -238,7 +239,7 @@ const Admin = () => {
   };
 
   const fetchUsers = async () => {
-    const response = await fetch('/api/users', {
+    const response = await fetch(`${API_BASE_URL}/users`, {
       headers: authHeaders,
     });
 
@@ -319,7 +320,7 @@ const Admin = () => {
         formData.append('coverImage', coverFile);
       }
 
-      const response = await fetch('/api/songs/upload-song', {
+      const response = await fetch(`${API_BASE_URL}/songs/upload-song`, {
         method: 'POST',
         headers: authHeaders,
         body: formData,
@@ -372,7 +373,7 @@ const Admin = () => {
       setError('');
       setSuccess('');
 
-      const response = await fetch('/api/artists', {
+      const response = await fetch(`${API_BASE_URL}/artists`, {
         method: 'POST',
         headers: jsonAuthHeaders,
         body: JSON.stringify({
@@ -416,7 +417,7 @@ const Admin = () => {
       setError('');
       setSuccess('');
 
-      const response = await fetch('/api/albums', {
+      const response = await fetch(`${API_BASE_URL}/albums`, {
         method: 'POST',
         headers: jsonAuthHeaders,
         body: JSON.stringify({

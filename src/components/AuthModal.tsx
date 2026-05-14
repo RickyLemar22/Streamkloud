@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import {
@@ -49,6 +49,24 @@ export function AuthModal() {
 
     navigate(from, { replace: true });
   };
+
+  useEffect(() => {
+    if (isOpen) {
+      setGoogleLoading(false);
+    }
+  }, [isOpen, mode]);
+
+  useEffect(() => {
+    const resetGoogleLoading = () => setGoogleLoading(false);
+
+    window.addEventListener('focus', resetGoogleLoading);
+    window.addEventListener('pageshow', resetGoogleLoading);
+
+    return () => {
+      window.removeEventListener('focus', resetGoogleLoading);
+      window.removeEventListener('pageshow', resetGoogleLoading);
+    };
+  }, []);
 
   const saveBackendAuth = (data: any) => {
     if (data.token) {
@@ -105,7 +123,7 @@ export function AuthModal() {
   };
 
   const tryAdminLogin = async () => {
-    const response = await fetch('/api/auth/admin-login', {
+    const response = await fetch(`${API_BASE_URL}/auth/admin-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -120,7 +138,7 @@ export function AuthModal() {
   };
 
   const backendUserLogin = async () => {
-    const response = await fetch('/api/auth/login', {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -137,7 +155,7 @@ export function AuthModal() {
   };
 
   const backendRegisterUser = async () => {
-    const response = await fetch('/api/auth/register', {
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -157,7 +175,7 @@ export function AuthModal() {
   };
 
   const resendVerificationCode = async () => {
-    const response = await fetch('/api/auth/send-verification', {
+    const response = await fetch(`${API_BASE_URL}/auth/send-verification`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
@@ -173,7 +191,7 @@ export function AuthModal() {
   };
 
   const sendPasswordResetCode = async () => {
-    const response = await fetch('/api/auth/forgot-password', {
+    const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
@@ -189,8 +207,11 @@ export function AuthModal() {
   };
 
   const handleGoogleLogin = () => {
+    if (googleLoading) return;
+
     setGoogleLoading(true);
     setError(null);
+    sessionStorage.setItem('streamkloud_google_auth_mode', mode);
 
     window.location.href = `${API_BASE_URL}/auth/google`;
   };
@@ -250,7 +271,7 @@ export function AuthModal() {
         return;
       }
 
-      const response = await fetch('/api/auth/verify-code', {
+      const response = await fetch(`${API_BASE_URL}/auth/verify-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: verificationCode }),
@@ -311,7 +332,7 @@ export function AuthModal() {
     setError(null);
 
     try {
-      const response = await fetch('/api/auth/reset-password', {
+      const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -538,7 +559,13 @@ export function AuthModal() {
                 ) : (
                   <Chrome className="h-5 w-5" />
                 )}
-                Continue with Google
+                {googleLoading
+                  ? mode === 'signup'
+                    ? 'Signing up with Google...'
+                    : 'Continuing with Google...'
+                  : mode === 'signup'
+                  ? 'Sign up with Google'
+                  : 'Continue with Google'}
               </Button>
 
               <div className="relative">
@@ -668,6 +695,7 @@ export function AuthModal() {
               setPassword('');
               setVerificationCode('');
               setResetCode('');
+              setGoogleLoading(false);
               setMode(mode === 'login' ? 'signup' : 'login');
             }}
             className="font-bold text-orange-500 hover:underline"

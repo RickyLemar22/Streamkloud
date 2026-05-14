@@ -1,3 +1,5 @@
+import { API_BASE_URL } from "@/lib/apiConfig";
+
 /**
  * Uploads a file through the backend upload API.
  * Firebase has been completely removed from this file.
@@ -32,7 +34,7 @@ export async function uploadFile(
 
     if (onProgress) onProgress(10);
 
-    const response = await fetch("/api/upload", {
+    const response = await fetch(`${API_BASE_URL}/upload`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,

@@ -5,7 +5,7 @@ import { SongCard } from "@/components/SongCard";
 import { Button } from "@/components/ui/button";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useAuthModal } from "@/store/useAuthModal";
-import { getMediaUrl } from "@/lib/apiConfig";
+import { API_BASE_URL, getMediaUrl } from "@/lib/apiConfig";
 import {
   Flame,
   BarChart3,
@@ -144,7 +144,7 @@ export function Home() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const healthRes = await fetch("/api/health").catch((err) => ({
+        const healthRes = await fetch(`${API_BASE_URL}/health`).catch((err) => ({
           ok: false,
           statusText: err.message,
         }));
@@ -156,8 +156,8 @@ export function Home() {
         );
 
         const [songsRes, artistsRes] = await Promise.all([
-          fetch("/api/songs"),
-          fetch("/api/artists").catch(() => null),
+          fetch(`${API_BASE_URL}/songs`),
+          fetch(`${API_BASE_URL}/artists`).catch(() => null),
         ]);
 
         if (!songsRes.ok) {
