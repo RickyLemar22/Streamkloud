@@ -536,7 +536,7 @@ export function Player() {
       )}
 
       {queueOpen && (
-        <div className="fixed right-4 bottom-28 w-80 max-w-[calc(100vw-2rem)] bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl z-[90] overflow-hidden">
+        <div className="fixed left-4 right-4 bottom-64 sm:left-auto sm:right-4 sm:bottom-32 sm:w-80 max-w-[calc(100vw-2rem)] bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl z-[90] overflow-hidden">
           <div className="p-4 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between">
             <div>
               <h3 className="font-bold text-white">Queue</h3>
@@ -628,11 +628,11 @@ export function Player() {
         </div>
       )}
 
-      <div className="fixed left-4 right-4 bottom-24 sm:bottom-24 md:left-6 md:right-6 md:bottom-6 lg:left-[20rem] lg:right-6 lg:bottom-5 xl:right-8 xl:bottom-6 z-50 w-auto px-0">
-        <div className="bg-zinc-900/95 lg:bg-zinc-900/90 backdrop-blur-xl border border-zinc-800/70 rounded-2xl lg:rounded-3xl p-3 lg:p-4 flex items-center justify-between gap-x-2 shadow-2xl shadow-black/50 overflow-hidden relative group">
-          <div className="absolute top-0 left-0 w-full h-2 bg-zinc-700/80 group/progress">
+      <div className="fixed left-0 right-0 bottom-24 z-[9999] w-full px-4 pb-0 sm:px-5 md:left-0 md:right-0 md:bottom-5 md:px-6 lg:left-[20rem] lg:right-6 lg:bottom-5 lg:w-auto lg:px-0 lg:pb-0 xl:right-8 xl:bottom-6">
+        <div className="bg-zinc-900/98 lg:bg-zinc-900/90 backdrop-blur-xl border border-zinc-700/80 rounded-2xl lg:rounded-3xl p-3 sm:p-3.5 md:p-4 lg:p-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-y-2.5 lg:gap-y-0 lg:gap-x-3 shadow-2xl shadow-black/50 overflow-hidden relative group">
+          <div className="absolute top-0 left-0 w-full h-2 bg-zinc-500/90 group/progress">
             <div
-              className="h-full bg-orange-500 transition-all"
+              className="h-full bg-orange-500 transition-all shadow-[0_0_10px_rgba(249,115,22,0.8)]"
               style={{
                 width: `${
                   currentSong && Number.isFinite(duration) && duration > 0
@@ -651,8 +651,8 @@ export function Player() {
             />
           </div>
 
-          <div className="flex items-center gap-x-3 lg:gap-x-4 flex-1 lg:w-1/4 min-w-0">
-            <div className="relative w-12 h-12 lg:w-14 lg:h-14 shrink-0 overflow-hidden rounded-lg lg:rounded-xl shadow-lg bg-zinc-800 flex items-center justify-center">
+          <div className="flex items-center gap-x-3 lg:gap-x-4 w-full lg:w-1/4 min-w-0 order-1">
+            <div className="relative w-12 h-12 sm:w-13 sm:h-13 md:w-14 md:h-14 lg:w-14 lg:h-14 shrink-0 overflow-hidden rounded-xl shadow-lg bg-zinc-800 flex items-center justify-center">
               {currentSong ? (
                 <img
                   src={
@@ -669,11 +669,11 @@ export function Player() {
             </div>
 
             <div className="flex flex-col min-w-0 flex-1">
-              <div className="lg:hidden text-xs font-bold text-orange-500 uppercase tracking-wider mb-0.5">
+              <div className="lg:hidden text-[10px] sm:text-xs font-extrabold text-orange-500 uppercase tracking-[0.18em] leading-none mb-1">
                 Now Playing
               </div>
 
-              <span className="text-white font-bold truncate text-sm lg:text-base">
+              <span className="text-white font-bold truncate text-sm sm:text-base lg:text-base leading-tight">
                 {currentSong ? currentSong.title : "None"}
               </span>
 
@@ -724,7 +724,7 @@ export function Player() {
             )}
           </div>
 
-          <div className="flex items-center gap-x-2 sm:gap-x-3 lg:gap-x-6 px-1 sm:px-2 lg:px-4 shrink-0">
+          <div className="flex items-center justify-center gap-x-4 sm:gap-x-5 md:gap-x-6 lg:gap-x-6 w-full lg:w-auto px-0 lg:px-4 shrink-0 order-2">
             <button
               type="button"
               onClick={toggleShuffle}
@@ -763,15 +763,15 @@ export function Player() {
               }}
               disabled={!currentSong}
               className={cn(
-                "w-10 h-10 lg:w-14 lg:h-14 bg-white text-black rounded-full flex items-center justify-center hover:scale-105 transition-transform shadow-lg shrink-0",
+                "w-9 h-9 sm:w-10 sm:h-10 md:w-11 md:h-11 lg:w-14 lg:h-14 bg-white text-black rounded-full flex items-center justify-center hover:scale-105 transition-transform shadow-lg shrink-0",
                 !currentSong && "opacity-50 cursor-not-allowed",
               )}
               title={isPlaying ? "Pause" : "Play"}
             >
               {isPlaying && currentSong ? (
-                <Pause className="w-5 h-5 lg:w-7 lg:h-7 fill-black" />
+                <Pause className="w-6 h-6 lg:w-7 lg:h-7 fill-black" />
               ) : (
-                <Play className="w-5 h-5 lg:w-7 lg:h-7 fill-black ml-0.5 lg:ml-1" />
+                <Play className="w-6 h-6 lg:w-7 lg:h-7 fill-black ml-0.5 lg:ml-1" />
               )}
             </button>
 
@@ -809,7 +809,7 @@ export function Player() {
             </button>
           </div>
 
-          <div className="flex items-center gap-x-2 sm:gap-x-3 lg:gap-x-6 w-auto lg:w-1/4 justify-end shrink-0">
+          <div className="flex items-center justify-center lg:justify-end gap-x-4 sm:gap-x-5 md:gap-x-6 lg:gap-x-6 w-full lg:w-1/4 shrink-0 order-3">
             <button
               type="button"
               onClick={() => setShowLyrics(true)}
@@ -850,8 +850,8 @@ export function Player() {
               )}
             </button>
 
-            <div className="flex items-center gap-x-2 w-16 sm:w-20 md:w-28 xl:w-32">
-              <Volume2 className="w-5 h-5 text-zinc-400" />
+            <div className="flex items-center gap-x-2 w-28 sm:w-32 md:w-36 xl:w-32">
+              <Volume2 className="w-5 h-5 text-zinc-300 shrink-0" />
               <Slider
                 value={[safeVolume * 100]}
                 max={100}
