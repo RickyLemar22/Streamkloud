@@ -22,7 +22,10 @@ import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { ScrollArea } from "./ui/scroll-area";
 import { useAuthModal } from "@/store/useAuthModal";
-import { API_BASE_URL as CONFIGURED_API_BASE_URL, BACKEND_BASE_URL } from "@/lib/apiConfig";
+import {
+  API_BASE_URL as CONFIGURED_API_BASE_URL,
+  BACKEND_BASE_URL,
+} from "@/lib/apiConfig";
 
 export function Player() {
   const {
@@ -56,12 +59,23 @@ export function Player() {
 
   const { open } = useAuthModal();
 
-  const API_BASE =
-    import.meta.env.VITE_API_URL ||
-    CONFIGURED_API_BASE_URL ||
-    BACKEND_BASE_URL;
+  const configuredApiBase =
+    import.meta.env.VITE_API_URL || CONFIGURED_API_BASE_URL || BACKEND_BASE_URL;
 
-  const BACKEND_BASE = BACKEND_BASE_URL || API_BASE.replace(/\/api\/?$/, "");
+  const isHttpsPage =
+    typeof window !== "undefined" && window.location.protocol === "https:";
+
+  // On production HTTPS, never send HLS/audio requests to an http:// IP.
+  // Browser blocks that as Mixed Content. Use the current domain proxy instead.
+  const API_BASE =
+    isHttpsPage && configuredApiBase?.startsWith("http://")
+      ? `${window.location.origin}/api`
+      : configuredApiBase;
+
+  const BACKEND_BASE =
+    isHttpsPage && BACKEND_BASE_URL?.startsWith("http://")
+      ? window.location.origin
+      : BACKEND_BASE_URL || API_BASE.replace(/\/api\/?$/, "");
 
   const stripTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 
@@ -75,15 +89,27 @@ export function Player() {
     return Boolean(song && song.id !== undefined && song.id !== null);
   };
 
+  const normalizeAbsoluteMediaUrl = (url: string) => {
+    if (!isHttpsPage || !url.startsWith("http://")) return url;
+
+    try {
+      const parsedUrl = new URL(url);
+
+      // Production is HTTPS, so use the current StreamKloud domain proxy
+      // instead of the insecure Lightsail IP/host that the browser blocks.
+      return `${window.location.origin}${parsedUrl.pathname}${parsedUrl.search}`;
+    } catch {
+      return url.replace(/^http:\/\//, "https://");
+    }
+  };
+
   const toBackendUrl = (url?: string) => {
     if (!url) return "";
 
-    if (
-      url.startsWith("http://") ||
-      url.startsWith("https://") ||
-      url.startsWith("blob:")
-    ) {
-      return url;
+    if (url.startsWith("blob:")) return url;
+
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      return normalizeAbsoluteMediaUrl(url);
     }
 
     return `${stripTrailingSlash(BACKEND_BASE)}${url.startsWith("/") ? url : `/${url}`}`;
@@ -92,12 +118,10 @@ export function Player() {
   const toApiUrl = (path?: string) => {
     if (!path) return "";
 
-    if (
-      path.startsWith("http://") ||
-      path.startsWith("https://") ||
-      path.startsWith("blob:")
-    ) {
-      return path;
+    if (path.startsWith("blob:")) return path;
+
+    if (path.startsWith("http://") || path.startsWith("https://")) {
+      return normalizeAbsoluteMediaUrl(path);
     }
 
     const cleanApiBase = stripTrailingSlash(API_BASE);
@@ -236,7 +260,9 @@ export function Player() {
     const updatedRecent = [
       currentSong,
       ...recentlyPlayed.filter((s: any) => s?.id !== currentSong.id),
-    ].filter(isValidSong).slice(0, 10);
+    ]
+      .filter(isValidSong)
+      .slice(0, 10);
 
     localStorage.setItem("recentlyPlayed", JSON.stringify(updatedRecent));
     window.dispatchEvent(new Event("recentlyPlayedUpdated"));
@@ -272,7 +298,8 @@ export function Player() {
     const isHlsStream = playbackUrl.includes(".m3u8");
 
     const playWhenReady = () => {
-      if (!shouldAutoPlayRef.current || !audioRef.current || !currentSong) return;
+      if (!shouldAutoPlayRef.current || !audioRef.current || !currentSong)
+        return;
 
       const playPromise = audioRef.current.play();
 
@@ -331,7 +358,10 @@ export function Player() {
 
         setIsPlaying(false);
       });
-    } else if (isHlsStream && audio.canPlayType("application/vnd.apple.mpegurl")) {
+    } else if (
+      isHlsStream &&
+      audio.canPlayType("application/vnd.apple.mpegurl")
+    ) {
       audio.src = playbackUrl;
       audio.load();
       audio.addEventListener("loadedmetadata", playWhenReady, { once: true });
@@ -600,20 +630,30 @@ export function Player() {
         </div>
       )}
 
-      <div className="fixed bottom-0 md:bottom-4 lg:bottom-5 xl:bottom-6 left-0 md:left-4 lg:left-[20rem] xl:left-[20rem] 2xl:left-[20rem] right-0 md:right-4 lg:right-6 xl:right-8 z-50 w-auto px-0">
-        <div className="bg-zinc-900/95 lg:bg-zinc-900/90 backdrop-blur-xl border-t lg:border border-zinc-800/50 lg:rounded-3xl p-3 lg:p-4 flex items-center justify-between shadow-2xl shadow-black/50 overflow-hidden relative group">
-          <div className="absolute top-0 left-0 w-full h-1 lg:h-1.5 group/progress">
+      <div className="fixed left-4 right-4 bottom-24 sm:bottom-24 md:left-6 md:right-6 md:bottom-6 lg:left-[20rem] lg:right-6 lg:bottom-5 xl:right-8 xl:bottom-6 z-50 w-auto px-0">
+        <div className="bg-zinc-900/95 lg:bg-zinc-900/90 backdrop-blur-xl border border-zinc-800/70 rounded-2xl lg:rounded-3xl p-3 lg:p-4 flex items-center justify-between gap-x-2 shadow-2xl shadow-black/50 overflow-hidden relative group">
+          <div className="absolute top-0 left-0 w-full h-2 bg-zinc-700/80 group/progress">
+            <div
+              className="h-full bg-orange-500 transition-all"
+              style={{
+                width: `${
+                  currentSong && Number.isFinite(duration) && duration > 0
+                    ? Math.min(100, Math.max(0, (progress / duration) * 100))
+                    : 0
+                }%`,
+              }}
+            />
             <Slider
               value={[Number.isFinite(progress) ? progress : 0]}
               max={Number.isFinite(duration) && duration > 0 ? duration : 100}
               step={0.1}
               onValueChange={handleSeek}
               disabled={!currentSong}
-              className="w-full absolute top-0 cursor-pointer"
+              className="w-full absolute inset-0 cursor-pointer opacity-0"
             />
           </div>
 
-          <div className="flex items-center gap-x-3 lg:gap-x-4 w-full lg:w-1/4 min-w-0">
+          <div className="flex items-center gap-x-3 lg:gap-x-4 flex-1 lg:w-1/4 min-w-0">
             <div className="relative w-12 h-12 lg:w-14 lg:h-14 shrink-0 overflow-hidden rounded-lg lg:rounded-xl shadow-lg bg-zinc-800 flex items-center justify-center">
               {currentSong ? (
                 <img
@@ -686,7 +726,7 @@ export function Player() {
             )}
           </div>
 
-          <div className="flex items-center gap-x-2 sm:gap-x-3 lg:gap-x-6 px-2 lg:px-4">
+          <div className="flex items-center gap-x-2 sm:gap-x-3 lg:gap-x-6 px-1 sm:px-2 lg:px-4 shrink-0">
             <button
               type="button"
               onClick={toggleShuffle}
@@ -771,13 +811,13 @@ export function Player() {
             </button>
           </div>
 
-          <div className="hidden lg:flex items-center gap-x-6 w-1/4 justify-end">
+          <div className="flex items-center gap-x-2 sm:gap-x-3 lg:gap-x-6 w-auto lg:w-1/4 justify-end shrink-0">
             <button
               type="button"
               onClick={() => setShowLyrics(true)}
               disabled={!currentSong}
               className={cn(
-                "transition-colors",
+                "hidden lg:block transition-colors",
                 showLyrics
                   ? "text-orange-500"
                   : "text-zinc-500 hover:text-zinc-300",
@@ -812,7 +852,7 @@ export function Player() {
               )}
             </button>
 
-            <div className="hidden md:flex items-center gap-x-3 w-32">
+            <div className="flex items-center gap-x-2 w-16 sm:w-20 md:w-28 xl:w-32">
               <Volume2 className="w-5 h-5 text-zinc-400" />
               <Slider
                 value={[safeVolume * 100]}
