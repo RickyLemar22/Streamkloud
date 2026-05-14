@@ -11,6 +11,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthModal } from '@/store/useAuthModal';
 import { useProfileModal } from '@/store/useProfileModal';
 import { formatDistanceToNow } from 'date-fns';
+import { API_BASE_URL } from '@/lib/apiConfig';
 
 type StoredUser = {
   id?: string | number;
@@ -110,7 +111,7 @@ export function Header() {
       return;
     }
 
-    fetch('/api/notifications', {
+    fetch(`${API_BASE_URL}/notifications`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -143,7 +144,7 @@ export function Header() {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    await fetch(`/api/notifications/${id}/read`, {
+    await fetch(`${API_BASE_URL}/notifications/${id}/read`, {
       method: 'PATCH',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -159,7 +160,7 @@ export function Header() {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    await fetch('/api/notifications/read-all', {
+    await fetch(`${API_BASE_URL}/notifications/read-all`, {
       method: 'PATCH',
       headers: {
         Authorization: `Bearer ${token}`,

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthModal } from '@/store/useAuthModal';
+import { API_BASE_URL } from '@/lib/apiConfig';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -135,7 +136,7 @@ export function Upload() {
 
       setProgress(60);
 
-      const response = await fetch('/api/songs/upload-song', {
+      const response = await fetch(`${API_BASE_URL}/songs/upload-song`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,

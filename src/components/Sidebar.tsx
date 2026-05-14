@@ -15,6 +15,7 @@ import { Logo } from './Logo';
 import { useAuthModal } from '@/store/useAuthModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { API_BASE_URL } from '@/lib/apiConfig';
 
 const NAV_ITEMS = [
   { icon: Home, label: 'Home', path: '/' },
@@ -83,7 +84,7 @@ export function Sidebar() {
 
     const token = localStorage.getItem('token');
 
-    fetch('/api/playlists', {
+    fetch(`${API_BASE_URL}/playlists`, {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
@@ -99,7 +100,7 @@ export function Sidebar() {
   const createPlaylist = async (name: string) => {
     const token = localStorage.getItem('token');
 
-    const response = await fetch('/api/playlists', {
+    const response = await fetch(`${API_BASE_URL}/playlists`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

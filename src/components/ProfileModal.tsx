@@ -11,6 +11,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Loader2, User, Mail, Lock, Trash2, AlertTriangle } from 'lucide-react';
 import { useProfileModal } from '@/store/useProfileModal';
+import { API_BASE_URL } from '@/lib/apiConfig';
 
 type StoredUser = {
   id?: string | number;
@@ -81,7 +82,7 @@ export function ProfileModal() {
     try {
       const token = localStorage.getItem('token');
 
-      const response = await fetch('/api/auth/change-password', {
+      const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -125,7 +126,7 @@ export function ProfileModal() {
     try {
       const token = localStorage.getItem('token');
 
-      const response = await fetch('/api/auth/delete-account', {
+      const response = await fetch(`${API_BASE_URL}/auth/delete-account`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
