@@ -17,6 +17,20 @@ import { Chrome, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useAuthModal } from '../store/useAuthModal';
 import { API_BASE_URL } from '@/lib/apiConfig';
 
+const getGoogleAuthUrl = () => {
+  const configuredApiUrl = String(API_BASE_URL || '').trim();
+  const productionApiUrl = 'https://api.streamkloud.me/api';
+
+  const baseUrl = configuredApiUrl || productionApiUrl;
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
+
+  if (normalizedBaseUrl.endsWith('/api')) {
+    return `${normalizedBaseUrl}/auth/google`;
+  }
+
+  return `${normalizedBaseUrl}/api/auth/google`;
+};
+
 export function AuthModal() {
   const { isOpen, close, mode, setMode } = useAuthModal();
 
@@ -213,7 +227,8 @@ export function AuthModal() {
     setError(null);
     sessionStorage.setItem('streamkloud_google_auth_mode', mode);
 
-    window.location.href = `${API_BASE_URL}/auth/google`;
+    const googleAuthUrl = getGoogleAuthUrl();
+    window.location.assign(googleAuthUrl);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

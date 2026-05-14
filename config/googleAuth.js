@@ -1,6 +1,7 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { pool } from './mysql.js';
 
 passport.use(
@@ -14,11 +15,14 @@ passport.use(
       try {
         const email = profile.emails?.[0]?.value;
         const googleId = profile.id;
-        const name = profile.displayName || email?.split('@')[0] || 'Google User';
+        const name =
+          profile.displayName || email?.split('@')[0] || 'Google User';
         const photoURL = profile.photos?.[0]?.value || '';
 
         if (!email) {
-          return done(null, false);
+          return done(null, false, {
+            message: 'Google account email was not found',
+          });
         }
 
         const [rows] = await pool.query(
@@ -33,16 +37,28 @@ passport.use(
 
           await pool.query(
             `UPDATE users 
-             SET google_id = ?, auth_provider = 'google', is_verified = 1 
+             SET google_id = ?, 
+                 auth_provider = 'google', 
+                 is_verified = 1 
              WHERE id = ?`,
             [googleId, user.id]
           );
+
+          user = {
+            ...user,
+            google_id: googleId,
+            auth_provider: 'google',
+            is_verified: 1,
+          };
         } else {
+          const randomPassword = `${googleId}-${Date.now()}-${process.env.JWT_SECRET}`;
+          const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
           const [result] = await pool.query(
             `INSERT INTO users 
-             (name, email, google_id, auth_provider, is_verified) 
-             VALUES (?, ?, ?, 'google', 1)`,
-            [name, email, googleId]
+             (name, email, password, google_id, auth_provider, is_verified) 
+             VALUES (?, ?, ?, ?, 'google', 1)`,
+            [name, email, hashedPassword, googleId]
           );
 
           user = {
@@ -52,6 +68,9 @@ passport.use(
             role: 'user',
             userType: 'user',
             photoURL,
+            google_id: googleId,
+            auth_provider: 'google',
+            is_verified: 1,
           };
         }
 
@@ -75,10 +94,11 @@ passport.use(
             email: user.email,
             role: user.role || 'user',
             userType: user.userType || 'user',
-            photoURL,
+            photoURL: user.photoURL || photoURL,
           },
         });
       } catch (error) {
+        console.error('Google Auth Error:', error);
         return done(error, null);
       }
     }
