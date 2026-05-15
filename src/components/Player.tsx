@@ -28,7 +28,6 @@ import {
 } from "@/lib/apiConfig";
 
 export function Player() {
-  const { isOpen: isAuthModalOpen } = useAuthModal();
   const {
     currentSong,
     isPlaying,
@@ -669,7 +668,7 @@ export function Player() {
         <div
           className={cn(
             "fixed left-0 right-0 bottom-0 z-[40] w-full px-0 pb-[env(safe-area-inset-bottom)] md:left-4 md:right-4 md:bottom-4 md:w-auto md:px-0 md:pb-0 lg:left-[20rem] lg:right-6 lg:bottom-5 lg:z-[40] lg:w-auto lg:px-0 lg:pb-0 xl:right-8 xl:bottom-6",
-            isAuthModalOpen && "max-lg:hidden",
+            isAuthModalOpen && "lg:hidden",
           )}
         >
           <div className="bg-zinc-900/98 lg:bg-zinc-900/90 backdrop-blur-xl border-x-0 border-t border-b-0 lg:border lg:border-zinc-700/80 border-zinc-700/80 rounded-none lg:rounded-3xl h-[88px] md:h-[78px] lg:h-auto px-4 py-3 md:px-5 md:py-2 lg:p-4 flex flex-row items-center justify-between gap-x-3 md:gap-x-4 lg:gap-x-3 shadow-2xl shadow-black/50 overflow-hidden relative group">
