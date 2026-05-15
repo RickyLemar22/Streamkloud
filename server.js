@@ -6,7 +6,7 @@ import session from 'express-session';
 import passport from './config/googleAuth.js';
 import { createServer as createViteServer } from 'vite';
 
-//import connectDB from './config/db.js';
+// import connectDB from './config/db.js';
 import { testMySQLConnection } from './config/mysql.js';
 
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
@@ -41,7 +41,7 @@ if (!process.env.FLW_PUBLIC_KEY || !process.env.FLW_SECRET_KEY || !process.env.F
   console.warn('⚠️ Flutterwave settings are incomplete. Payments/webhooks may fail.');
 }
 
-//connectDB();
+// connectDB();
 testMySQLConnection();
 
 const app = express();
@@ -54,31 +54,45 @@ app.use((req, res, next) => {
 const allowedOrigins = [
   'https://streamkloud.me',
   'https://www.streamkloud.me',
+  'https://d2t6l9mce65ic7.cloudfront.net',
   'http://localhost:5173',
+  'http://localhost:3000',
 ];
 
-if (process.env.FRONTEND_URL) {
+if (process.env.FRONTEND_URL && !allowedOrigins.includes(process.env.FRONTEND_URL)) {
   allowedOrigins.push(process.env.FRONTEND_URL);
 }
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin) {
+      return callback(null, true);
+    }
 
-      return callback(new Error(`CORS blocked for origin: ${origin}`));
-    },
-    credentials: true,
-  })
-);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.log(`❌ CORS blocked for origin: ${origin}`);
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.use(
   session({
     secret: process.env.JWT_SECRET,
     resave: false,
     saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    },
   })
 );
 
@@ -115,8 +129,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/songs', songRoutes);
 
-// Protected encrypted HLS stream routes.
-// Final URL becomes: /api/songs/stream/:id/master.m3u8
+// Final stream URL: /api/songs/stream/:id/master.m3u8
 app.use('/api', streamRoutes);
 
 app.use('/api/artists', artistRoutes);
@@ -157,6 +170,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log('--- SERVER IS LISTENING ---');
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+  console.log(`Allowed CORS origins: ${allowedOrigins.join(', ')}`);
   console.log(`API health check: http://localhost:${PORT}/api/health`);
   console.log(`Local uploads available at http://localhost:${PORT}/uploads`);
   console.log(`Protected stream example: http://localhost:${PORT}/api/songs/stream/1/master.m3u8`);
