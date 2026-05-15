@@ -28,6 +28,7 @@ import {
 } from "@/lib/apiConfig";
 
 export function Player() {
+  const { isOpen: isAuthModalOpen } = useAuthModal();
   const {
     currentSong,
     isPlaying,
