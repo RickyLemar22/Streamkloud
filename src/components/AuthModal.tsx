@@ -520,7 +520,7 @@ export function AuthModal() {
                   New Password
                 </Label>
 
-                <div className="relative">
+                <div className="relative z-[10000]">
                   <Input
                     id="new-password"
                     type={showPassword ? 'text' : 'password'}
