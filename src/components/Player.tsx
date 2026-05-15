@@ -157,7 +157,13 @@ export function Player() {
       return toBackendUrl(song.audioUrl || song.url || song.file_url);
     }
 
-    const hlsUrl = [song.hls_url, song.hlsPath, song.hls_path, song.audioUrl, song.url].find(
+    const hlsUrl = [
+      song.hls_url,
+      song.hlsPath,
+      song.hls_path,
+      song.audioUrl,
+      song.url,
+    ].find(
       (url) => typeof url === "string" && url.trim() && url.includes(".m3u8"),
     );
 
@@ -492,6 +498,16 @@ export function Player() {
   };
 
   const safeQueue = Array.isArray(queue) ? queue.filter(isValidSong) : [];
+  const isAuthenticated = Boolean(getToken());
+
+  // Keep login/signup controls usable on small screens.
+  // The fixed player should only appear when there is an actual playable song
+  // and should stay hidden for guests after playback is blocked.
+  const shouldShowPlayerBar = Boolean(
+    currentSong &&
+    isValidSong(currentSong) &&
+    (isAuthenticated || isLocalSong(currentSong)),
+  );
 
   return (
     <>
@@ -546,17 +562,17 @@ export function Player() {
         </div>
       )}
 
-      {queueOpen && (
+      {shouldShowPlayerBar && queueOpen && (
         <button
           type="button"
           onClick={() => setQueueOpen(false)}
-          className="fixed inset-0 bg-black/20 z-[70]"
+          className="fixed inset-0 bg-black/20 z-[45]"
           aria-label="Close queue"
         />
       )}
 
-      {queueOpen && (
-        <div className="fixed left-4 right-4 bottom-48 sm:left-auto sm:right-4 sm:bottom-32 sm:w-80 max-w-[calc(100vw-2rem)] bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl z-[90] overflow-hidden">
+      {shouldShowPlayerBar && queueOpen && (
+        <div className="fixed left-4 right-4 bottom-32 sm:left-auto sm:right-4 sm:bottom-28 sm:w-80 max-w-[calc(100vw-2rem)] bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl z-[60] overflow-hidden">
           <div className="p-4 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between">
             <div>
               <h3 className="font-bold text-white">Queue</h3>
@@ -648,263 +664,265 @@ export function Player() {
         </div>
       )}
 
-      <div
-        className={cn(
-          "fixed left-0 right-0 bottom-24 z-[70] w-full px-0 pb-0 md:left-0 md:right-0 md:bottom-24 md:px-0 lg:left-[20rem] lg:right-6 lg:bottom-5 lg:z-[70] lg:w-auto lg:px-0 lg:pb-0 xl:right-8 xl:bottom-6",
-          isAuthModalOpen && "max-lg:hidden",
-        )}
-      >
-        <div className="bg-zinc-900/98 lg:bg-zinc-900/90 backdrop-blur-xl border-x-0 border-t border-b-0 lg:border lg:border-zinc-700/80 border-zinc-700/80 rounded-none lg:rounded-3xl h-[88px] md:h-[78px] lg:h-auto px-4 py-3 md:px-5 md:py-2 lg:p-4 flex flex-row items-center justify-between gap-x-3 md:gap-x-4 lg:gap-x-3 shadow-2xl shadow-black/50 overflow-hidden relative group">
-          <div className="absolute top-0 left-0 w-full h-1.5 md:h-1.5 lg:h-2 bg-zinc-500/90 group/progress">
-            <div
-              className="h-full bg-orange-500 transition-all shadow-[0_0_10px_rgba(249,115,22,0.8)]"
-              style={{
-                width: `${
-                  currentSong && Number.isFinite(duration) && duration > 0
-                    ? Math.min(100, Math.max(0, (progress / duration) * 100))
-                    : 0
-                }%`,
-              }}
-            />
-            <Slider
-              value={[Number.isFinite(progress) ? progress : 0]}
-              max={Number.isFinite(duration) && duration > 0 ? duration : 100}
-              step={0.1}
-              onValueChange={handleSeek}
-              disabled={!currentSong}
-              className="w-full absolute inset-0 cursor-pointer opacity-0"
-            />
-          </div>
-
-          <div className="flex items-center gap-x-3 lg:gap-x-4 w-[52%] md:w-[40%] lg:w-1/4 min-w-0 order-1 shrink-0">
-            <div className="relative w-14 h-14 md:w-12 md:h-12 lg:w-14 lg:h-14 shrink-0 overflow-hidden rounded-xl shadow-lg bg-zinc-800 flex items-center justify-center">
-              {currentSong ? (
-                <img
-                  src={
-                    currentSong.coverUrl ||
-                    "https://picsum.photos/seed/song/200/200"
-                  }
-                  alt={currentSong.title}
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <Music className="w-6 h-6 text-zinc-600" />
-              )}
-            </div>
-
-            <div className="flex flex-col min-w-0 flex-1">
-              <div className="lg:hidden text-[10px] md:text-[10px] font-extrabold text-orange-500 uppercase tracking-[0.16em] leading-none mb-1">
-                Now Playing
-              </div>
-
-              <span className="text-white font-bold truncate text-base md:text-sm lg:text-base leading-tight">
-                {currentSong ? currentSong.title : "None"}
-              </span>
-
-              <div className="flex items-center gap-x-2 truncate">
-                {currentSong ? (
-                  <>
-                    <Link
-                      to={`/artist/${currentSong.artist}`}
-                      className="text-zinc-400 text-xs lg:text-sm hover:text-orange-500 transition-colors truncate"
-                    >
-                      {currentSong.artist}
-                    </Link>
-
-                    {currentSong.album && (
-                      <>
-                        <span className="text-zinc-600">•</span>
-                        <Link
-                          to={`/album/${currentSong.album}`}
-                          className="text-zinc-500 text-xs lg:text-sm hover:text-zinc-300 transition-colors truncate"
-                        >
-                          {currentSong.album}
-                        </Link>
-                      </>
-                    )}
-                  </>
-                ) : (
-                  <span className="text-zinc-400 text-xs lg:text-sm truncate">
-                    Select a song to play
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {currentSong && (
-              <button
-                type="button"
-                onClick={() => toggleLike(currentSong.id)}
-                className={cn(
-                  "hidden lg:block ml-2 transition-colors",
-                  isLiked
-                    ? "text-orange-500"
-                    : "text-zinc-500 hover:text-zinc-300",
-                )}
-                title={isLiked ? "Unlike song" : "Like song"}
-              >
-                <Heart className={cn("w-5 h-5", isLiked && "fill-current")} />
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center justify-end lg:justify-center gap-x-3 md:gap-x-4 lg:gap-x-6 w-[46%] md:w-[34%] lg:w-auto px-0 lg:px-4 shrink-0 order-2">
-            <button
-              type="button"
-              onClick={toggleShuffle}
-              disabled={!currentSong}
-              className={cn(
-                "transition-colors",
-                isShuffled
-                  ? "text-orange-500"
-                  : "text-zinc-500 hover:text-zinc-300",
-                !currentSong && "opacity-50 cursor-not-allowed",
-              )}
-              title="Shuffle"
-            >
-              <Shuffle className="w-5 h-5 md:w-4 md:h-4 lg:w-5 lg:h-5" />
-            </button>
-
-            <button
-              type="button"
-              onClick={handlePrevious}
-              disabled={!currentSong}
-              className={cn(
-                "text-zinc-400 hover:text-white transition-colors",
-                !currentSong && "opacity-50 cursor-not-allowed",
-              )}
-              title="Previous"
-            >
-              <SkipBack className="w-7 h-7 md:w-6 md:h-6 lg:w-7 lg:h-7 fill-current" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (!currentSong) return;
-                if (!requireAuthForSong(currentSong)) return;
-                setIsPlaying(!isPlaying);
-              }}
-              disabled={!currentSong}
-              className={cn(
-                "w-14 h-14 md:w-12 md:h-12 lg:w-14 lg:h-14 bg-white text-black rounded-full flex items-center justify-center hover:scale-105 transition-transform shadow-lg shrink-0",
-                !currentSong && "opacity-50 cursor-not-allowed",
-              )}
-              title={isPlaying ? "Pause" : "Play"}
-            >
-              {isPlaying && currentSong ? (
-                <Pause className="w-7 h-7 lg:w-7 lg:h-7 fill-black" />
-              ) : (
-                <Play className="w-7 h-7 lg:w-7 lg:h-7 fill-black ml-0.5 lg:ml-1" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={playNext}
-              disabled={!currentSong}
-              className={cn(
-                "text-zinc-400 hover:text-white transition-colors",
-                !currentSong && "opacity-50 cursor-not-allowed",
-              )}
-              title="Next"
-            >
-              <SkipForward className="w-7 h-7 md:w-6 md:h-6 lg:w-7 lg:h-7 fill-current" />
-            </button>
-
-            <button
-              type="button"
-              onClick={toggleRepeat}
-              disabled={!currentSong}
-              className={cn(
-                "hidden lg:block transition-colors",
-                repeatMode !== "none"
-                  ? "text-orange-500"
-                  : "text-zinc-500 hover:text-zinc-300",
-                !currentSong && "opacity-50 cursor-not-allowed",
-              )}
-              title="Repeat"
-            >
-              {repeatMode === "one" ? (
-                <Repeat1 className="w-5 h-5" />
-              ) : (
-                <Repeat className="w-5 h-5" />
-              )}
-            </button>
-          </div>
-
-          <div className="hidden lg:flex items-center justify-end gap-x-6 w-1/4 shrink-0 order-3">
-            <button
-              type="button"
-              onClick={() => setShowLyrics(true)}
-              disabled={!currentSong}
-              className={cn(
-                "hidden lg:block transition-colors",
-                showLyrics
-                  ? "text-orange-500"
-                  : "text-zinc-500 hover:text-zinc-300",
-                !currentSong && "opacity-50 cursor-not-allowed",
-              )}
-              title="Lyrics"
-            >
-              <Mic2 className="w-5 h-5" />
-            </button>
-
-            <div className="hidden lg:flex items-center gap-x-2 text-zinc-500 text-xs font-mono">
-              <span>{formatTime(progress)}</span>
-              <span>/</span>
-              <span>{formatTime(currentSong?.duration || duration)}</span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setQueueOpen((prev) => !prev)}
-              className={cn(
-                "text-zinc-400 hover:text-white transition-colors relative",
-                queueOpen && "text-orange-500",
-              )}
-              title="Open queue"
-            >
-              <ListMusic className="w-6 h-6" />
-
-              {safeQueue.length > 0 && (
-                <span className="absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-orange-500 text-black text-[10px] font-bold flex items-center justify-center">
-                  {safeQueue.length}
-                </span>
-              )}
-            </button>
-
-            <div className="hidden lg:flex items-center gap-x-2 w-32">
-              <Volume2 className="w-5 h-5 text-zinc-300 shrink-0" />
+      {shouldShowPlayerBar && (
+        <div
+          className={cn(
+            "fixed left-0 right-0 bottom-0 z-[40] w-full px-0 pb-[env(safe-area-inset-bottom)] md:left-4 md:right-4 md:bottom-4 md:w-auto md:px-0 md:pb-0 lg:left-[20rem] lg:right-6 lg:bottom-5 lg:z-[40] lg:w-auto lg:px-0 lg:pb-0 xl:right-8 xl:bottom-6",
+            isAuthModalOpen && "max-lg:hidden",
+          )}
+        >
+          <div className="bg-zinc-900/98 lg:bg-zinc-900/90 backdrop-blur-xl border-x-0 border-t border-b-0 lg:border lg:border-zinc-700/80 border-zinc-700/80 rounded-none lg:rounded-3xl h-[88px] md:h-[78px] lg:h-auto px-4 py-3 md:px-5 md:py-2 lg:p-4 flex flex-row items-center justify-between gap-x-3 md:gap-x-4 lg:gap-x-3 shadow-2xl shadow-black/50 overflow-hidden relative group">
+            <div className="absolute top-0 left-0 w-full h-1.5 md:h-1.5 lg:h-2 bg-zinc-500/90 group/progress">
+              <div
+                className="h-full bg-orange-500 transition-all shadow-[0_0_10px_rgba(249,115,22,0.8)]"
+                style={{
+                  width: `${
+                    currentSong && Number.isFinite(duration) && duration > 0
+                      ? Math.min(100, Math.max(0, (progress / duration) * 100))
+                      : 0
+                  }%`,
+                }}
+              />
               <Slider
-                value={[safeVolume * 100]}
-                max={100}
-                step={1}
-                onValueChange={handleVolumeChange}
-                className="w-full"
+                value={[Number.isFinite(progress) ? progress : 0]}
+                max={Number.isFinite(duration) && duration > 0 ? duration : 100}
+                step={0.1}
+                onValueChange={handleSeek}
+                disabled={!currentSong}
+                className="w-full absolute inset-0 cursor-pointer opacity-0"
               />
             </div>
+
+            <div className="flex items-center gap-x-3 lg:gap-x-4 w-[52%] md:w-[40%] lg:w-1/4 min-w-0 order-1 shrink-0">
+              <div className="relative w-14 h-14 md:w-12 md:h-12 lg:w-14 lg:h-14 shrink-0 overflow-hidden rounded-xl shadow-lg bg-zinc-800 flex items-center justify-center">
+                {currentSong ? (
+                  <img
+                    src={
+                      currentSong.coverUrl ||
+                      "https://picsum.photos/seed/song/200/200"
+                    }
+                    alt={currentSong.title}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <Music className="w-6 h-6 text-zinc-600" />
+                )}
+              </div>
+
+              <div className="flex flex-col min-w-0 flex-1">
+                <div className="lg:hidden text-[10px] md:text-[10px] font-extrabold text-orange-500 uppercase tracking-[0.16em] leading-none mb-1">
+                  Now Playing
+                </div>
+
+                <span className="text-white font-bold truncate text-base md:text-sm lg:text-base leading-tight">
+                  {currentSong ? currentSong.title : "None"}
+                </span>
+
+                <div className="flex items-center gap-x-2 truncate">
+                  {currentSong ? (
+                    <>
+                      <Link
+                        to={`/artist/${currentSong.artist}`}
+                        className="text-zinc-400 text-xs lg:text-sm hover:text-orange-500 transition-colors truncate"
+                      >
+                        {currentSong.artist}
+                      </Link>
+
+                      {currentSong.album && (
+                        <>
+                          <span className="text-zinc-600">•</span>
+                          <Link
+                            to={`/album/${currentSong.album}`}
+                            className="text-zinc-500 text-xs lg:text-sm hover:text-zinc-300 transition-colors truncate"
+                          >
+                            {currentSong.album}
+                          </Link>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-zinc-400 text-xs lg:text-sm truncate">
+                      Select a song to play
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {currentSong && (
+                <button
+                  type="button"
+                  onClick={() => toggleLike(currentSong.id)}
+                  className={cn(
+                    "hidden lg:block ml-2 transition-colors",
+                    isLiked
+                      ? "text-orange-500"
+                      : "text-zinc-500 hover:text-zinc-300",
+                  )}
+                  title={isLiked ? "Unlike song" : "Like song"}
+                >
+                  <Heart className={cn("w-5 h-5", isLiked && "fill-current")} />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end lg:justify-center gap-x-3 md:gap-x-4 lg:gap-x-6 w-[46%] md:w-[34%] lg:w-auto px-0 lg:px-4 shrink-0 order-2">
+              <button
+                type="button"
+                onClick={toggleShuffle}
+                disabled={!currentSong}
+                className={cn(
+                  "transition-colors",
+                  isShuffled
+                    ? "text-orange-500"
+                    : "text-zinc-500 hover:text-zinc-300",
+                  !currentSong && "opacity-50 cursor-not-allowed",
+                )}
+                title="Shuffle"
+              >
+                <Shuffle className="w-5 h-5 md:w-4 md:h-4 lg:w-5 lg:h-5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrevious}
+                disabled={!currentSong}
+                className={cn(
+                  "text-zinc-400 hover:text-white transition-colors",
+                  !currentSong && "opacity-50 cursor-not-allowed",
+                )}
+                title="Previous"
+              >
+                <SkipBack className="w-7 h-7 md:w-6 md:h-6 lg:w-7 lg:h-7 fill-current" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!currentSong) return;
+                  if (!requireAuthForSong(currentSong)) return;
+                  setIsPlaying(!isPlaying);
+                }}
+                disabled={!currentSong}
+                className={cn(
+                  "w-14 h-14 md:w-12 md:h-12 lg:w-14 lg:h-14 bg-white text-black rounded-full flex items-center justify-center hover:scale-105 transition-transform shadow-lg shrink-0",
+                  !currentSong && "opacity-50 cursor-not-allowed",
+                )}
+                title={isPlaying ? "Pause" : "Play"}
+              >
+                {isPlaying && currentSong ? (
+                  <Pause className="w-7 h-7 lg:w-7 lg:h-7 fill-black" />
+                ) : (
+                  <Play className="w-7 h-7 lg:w-7 lg:h-7 fill-black ml-0.5 lg:ml-1" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={playNext}
+                disabled={!currentSong}
+                className={cn(
+                  "text-zinc-400 hover:text-white transition-colors",
+                  !currentSong && "opacity-50 cursor-not-allowed",
+                )}
+                title="Next"
+              >
+                <SkipForward className="w-7 h-7 md:w-6 md:h-6 lg:w-7 lg:h-7 fill-current" />
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleRepeat}
+                disabled={!currentSong}
+                className={cn(
+                  "hidden lg:block transition-colors",
+                  repeatMode !== "none"
+                    ? "text-orange-500"
+                    : "text-zinc-500 hover:text-zinc-300",
+                  !currentSong && "opacity-50 cursor-not-allowed",
+                )}
+                title="Repeat"
+              >
+                {repeatMode === "one" ? (
+                  <Repeat1 className="w-5 h-5" />
+                ) : (
+                  <Repeat className="w-5 h-5" />
+                )}
+              </button>
+            </div>
+
+            <div className="hidden lg:flex items-center justify-end gap-x-6 w-1/4 shrink-0 order-3">
+              <button
+                type="button"
+                onClick={() => setShowLyrics(true)}
+                disabled={!currentSong}
+                className={cn(
+                  "hidden lg:block transition-colors",
+                  showLyrics
+                    ? "text-orange-500"
+                    : "text-zinc-500 hover:text-zinc-300",
+                  !currentSong && "opacity-50 cursor-not-allowed",
+                )}
+                title="Lyrics"
+              >
+                <Mic2 className="w-5 h-5" />
+              </button>
+
+              <div className="hidden lg:flex items-center gap-x-2 text-zinc-500 text-xs font-mono">
+                <span>{formatTime(progress)}</span>
+                <span>/</span>
+                <span>{formatTime(currentSong?.duration || duration)}</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setQueueOpen((prev) => !prev)}
+                className={cn(
+                  "text-zinc-400 hover:text-white transition-colors relative",
+                  queueOpen && "text-orange-500",
+                )}
+                title="Open queue"
+              >
+                <ListMusic className="w-6 h-6" />
+
+                {safeQueue.length > 0 && (
+                  <span className="absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-orange-500 text-black text-[10px] font-bold flex items-center justify-center">
+                    {safeQueue.length}
+                  </span>
+                )}
+              </button>
+
+              <div className="hidden lg:flex items-center gap-x-2 w-32">
+                <Volume2 className="w-5 h-5 text-zinc-300 shrink-0" />
+                <Slider
+                  value={[safeVolume * 100]}
+                  max={100}
+                  step={1}
+                  onValueChange={handleVolumeChange}
+                  className="w-full"
+                />
+              </div>
+            </div>
           </div>
+
+          <audio
+            ref={audioRef}
+            preload="auto"
+            onTimeUpdate={handleTimeUpdate}
+            onLoadedMetadata={handleLoadedMetadata}
+            onEnded={playNext}
+            onError={() => {
+              console.error("Audio element error occurred");
+
+              if (currentSong) {
+                console.warn(`Failed to load song: ${currentSong.title}`);
+              }
+
+              setIsPlaying(false);
+            }}
+          />
         </div>
-
-        <audio
-          ref={audioRef}
-          preload="auto"
-          onTimeUpdate={handleTimeUpdate}
-          onLoadedMetadata={handleLoadedMetadata}
-          onEnded={playNext}
-          onError={() => {
-            console.error("Audio element error occurred");
-
-            if (currentSong) {
-              console.warn(`Failed to load song: ${currentSong.title}`);
-            }
-
-            setIsPlaying(false);
-          }}
-        />
-      </div>
+      )}
     </>
   );
 }
